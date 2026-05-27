@@ -1096,6 +1096,36 @@ export default function EmployeeQueryPage() {
                                     <span className="text-red-500">¥{(record.income_tax ?? 0).toLocaleString()}</span>
                                   </div>
                                 )}
+                                {(record.seniority_award ?? 0) > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">工龄奖</span>
+                                    <span className="text-slate-800">¥{(record.seniority_award ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.full_attendance_award ?? 0) > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">全勤奖</span>
+                                    <span className="text-slate-800">¥{(record.full_attendance_award ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.living_subsidy ?? 0) > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">生活补贴</span>
+                                    <span className="text-slate-800">¥{(record.living_subsidy ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.deduct_utilities ?? 0) > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">本月水电费</span>
+                                    <span className="text-red-500">¥{(record.deduct_utilities ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.total_deduction ?? 0) > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">应扣合计</span>
+                                    <span className="text-red-500">¥{(record.total_deduction ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
                                 {(record.fine ?? 0) !== 0 && (
                                   <div className="flex justify-between text-sm">
                                     <span className="text-slate-500">扣款</span>
