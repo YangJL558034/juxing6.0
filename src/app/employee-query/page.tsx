@@ -98,6 +98,9 @@ interface SalaryRecord {
   other_subsidy?: number;
   fine?: number;
   other_deduction?: number;
+  deduct_loan?: number;
+  deduct_urgent?: number;
+  deduct_other?: number;
   pre_tax_salary?: number;
   income_tax?: number;
 }
@@ -1124,6 +1127,30 @@ export default function EmployeeQueryPage() {
                                   <div className="flex justify-between text-sm">
                                     <span className="text-slate-500">应扣合计</span>
                                     <span className="text-red-500">¥{(record.total_deduction ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.deduct_social_security ?? 0) !== 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">社保扣款</span>
+                                    <span className="text-red-500">¥{Math.abs(record.deduct_social_security ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.deduct_loan ?? 0) !== 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">贷款扣款</span>
+                                    <span className="text-red-500">¥{Math.abs(record.deduct_loan ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.deduct_urgent ?? 0) !== 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">急扣</span>
+                                    <span className="text-red-500">¥{Math.abs(record.deduct_urgent ?? 0).toLocaleString()}</span>
+                                  </div>
+                                )}
+                                {(record.deduct_other ?? 0) !== 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-slate-500">其他扣除</span>
+                                    <span className="text-red-500">¥{Math.abs(record.deduct_other ?? 0).toLocaleString()}</span>
                                   </div>
                                 )}
                                 {(record.fine ?? 0) !== 0 && (
