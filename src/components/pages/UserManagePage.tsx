@@ -916,7 +916,7 @@ export default function UserManagePage() {
                 组织人事
               </h3>
               <div className="space-y-2">
-                {permissions.filter(p => p.code === 'usermanage').map(perm => (
+                {permissions.filter(p => ['usermanage', 'personnel', 'administration', 'human-resources', 'assets', 'salary'].includes(p.code)).map(perm => (
                   <div key={perm.id} className="flex items-center justify-between p-2 bg-white rounded-lg">
                     <div>
                       <div className="font-medium text-sm">{perm.name}</div>
@@ -939,7 +939,7 @@ export default function UserManagePage() {
                 系统管理
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {permissions.filter(p => ['taskmanage', 'todo', 'distribution', 'finance', 'salary', 'generate', 'ai-chat', 'smtp', 'operation-logs', 'settings'].includes(p.code)).map(perm => (
+                {permissions.filter(p => ['taskmanage', 'todo', 'distribution', 'finance', 'generate', 'ai-chat', 'smtp', 'database-backup', 'operation-logs', 'settings'].includes(p.code)).map(perm => (
                   <div key={perm.id} className="flex items-center justify-between p-2 bg-white rounded-lg">
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm truncate">{perm.name}</div>

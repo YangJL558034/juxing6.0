@@ -52,6 +52,7 @@ const permissionModules = [
   { name: '请购单', code: 'purchase' },
   { name: '报销管理', code: 'expense' },
   { name: '组织架构', code: 'organization' },
+  { name: '组织人事', code: 'hr' },
   { name: '系统设置', code: 'settings' },
 ];
 
@@ -72,6 +73,15 @@ const defaultPermissions = [
   { id: 14, name: '财务终审', code: 'finance_review', description: '财务终审权限', module: 'expense' },
   { id: 15, name: '管理组织', code: 'organization_manage', description: '管理组织架构', module: 'organization' },
   { id: 16, name: '系统设置', code: 'settings_manage', description: '系统设置权限', module: 'settings' },
+  { id: 17, name: '用户管理', code: 'usermanage', description: '管理系统用户', module: 'hr' },
+  { id: 18, name: '人事管理', code: 'personnel', description: '管理员工入职登记和员工档案', module: 'hr' },
+  { id: 19, name: '行政管理', code: 'administration', description: '管理员工住宿、水表和行政申请', module: 'hr' },
+  { id: 20, name: '人力资源', code: 'human-resources', description: '管理招聘职位和简历投递', module: 'hr' },
+  { id: 21, name: '资产管理', code: 'assets', description: '管理公司资产', module: 'hr' },
+  { id: 22, name: '工资工时查询', code: 'salary', description: '查询工资工时信息', module: 'hr' },
+  { id: 23, name: '数据库备份', code: 'database-backup', description: '备份和恢复系统数据库', module: 'settings' },
+  { id: 24, name: '邮件配置', code: 'smtp', description: '配置系统邮件发送', module: 'settings' },
+  { id: 25, name: '通知中心', code: 'notification-center', description: '发送和查看系统通知', module: 'settings' },
 ];
 
 const defaultRoles: Role[] = [

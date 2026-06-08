@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -31,7 +31,10 @@ import {
   MessageSquare,
   Play,
   Square,
-  RefreshCw
+  RefreshCw,
+  Download,
+  UploadCloud,
+  HardDrive,
 } from 'lucide-react';
 
 interface EmailConfig {
@@ -56,8 +59,35 @@ interface ServerInfo {
   uptime: string;
 }
 
+interface DatabaseBackupConfig {
+  autoEnabled: boolean;
+  intervalHours: number;
+  lastBackupAt: string | null;
+  lastBackupFile: string | null;
+  backupDir: string;
+}
+
+interface DatabaseBackupFile {
+  fileName: string;
+  size: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export function SettingsPage() {
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
+  const [backupConfig, setBackupConfig] = useState<DatabaseBackupConfig>({
+    autoEnabled: false,
+    intervalHours: 24,
+    lastBackupAt: null,
+    lastBackupFile: null,
+    backupDir: '',
+  });
+  const [backupFiles, setBackupFiles] = useState<DatabaseBackupFile[]>([]);
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupSaving, setBackupSaving] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
   const [basicSettings, setBasicSettings] = useState({
     siteName: '聚星数据平台',
     siteDesc: '企业级客户关系管理系统',
@@ -119,6 +149,26 @@ export function SettingsPage() {
     };
     loadServerInfo();
   }, []);
+
+  const loadBackupInfo = useCallback(async () => {
+    setBackupLoading(true);
+    try {
+      const res = await fetch('/api/database-backup', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success) {
+        setBackupConfig(data.config);
+        setBackupFiles(data.backups || []);
+      }
+    } catch (error) {
+      console.error('Load database backup info error:', error);
+    } finally {
+      setBackupLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadBackupInfo();
+  }, [loadBackupInfo]);
 
   // 加载邮箱配置
   useEffect(() => {
@@ -261,6 +311,88 @@ export function SettingsPage() {
     }
   };
 
+  const formatBackupSize = (size: number) => {
+    if (!size) return '-';
+    if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+    return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  };
+
+  const formatBackupTime = (value?: string | null) => {
+    if (!value) return '-';
+    return new Date(value).toLocaleString('zh-CN');
+  };
+
+  const handleDownloadDatabaseBackup = () => {
+    window.location.assign('/api/database-backup?action=download');
+    setTimeout(() => {
+      loadBackupInfo();
+    }, 1200);
+  };
+
+  const handleDownloadBackupFile = (fileName: string) => {
+    window.location.assign(`/api/database-backup?action=file&file=${encodeURIComponent(fileName)}`);
+  };
+
+  const handleSaveBackupConfig = async () => {
+    setBackupSaving(true);
+    try {
+      const res = await fetch('/api/database-backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save-config',
+          autoEnabled: backupConfig.autoEnabled,
+          intervalHours: backupConfig.intervalHours,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBackupConfig(data.config);
+        setBackupFiles(data.backups || []);
+        alert('数据库自动备份设置已保存');
+      } else {
+        alert(data.error || '保存自动备份设置失败');
+      }
+    } catch (error) {
+      alert('保存自动备份设置失败');
+    } finally {
+      setBackupSaving(false);
+    }
+  };
+
+  const handleRestoreDatabase = async () => {
+    if (!restoreFile) {
+      alert('请先选择要恢复的数据库备份文件');
+      return;
+    }
+    if (!confirm('恢复数据库会覆盖当前数据。系统会先自动备份当前数据库，确定继续吗？')) {
+      return;
+    }
+
+    setRestoreLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', restoreFile);
+      const res = await fetch('/api/database-backup', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success) {
+        setRestoreFile(null);
+        setBackupConfig(data.config);
+        setBackupFiles(data.backups || []);
+        alert('数据库恢复成功，请刷新页面确认数据');
+      } else {
+        alert(data.error || '数据库恢复失败');
+      }
+    } catch (error) {
+      alert('数据库恢复失败');
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -271,7 +403,7 @@ export function SettingsPage() {
       </div>
 
       <Tabs defaultValue="basic" className="space-y-4">
-        <TabsList className="grid grid-cols-2 md:grid-cols-6 w-full md:w-auto">
+        <TabsList className="grid grid-cols-2 md:grid-cols-7 w-full md:w-auto">
           <TabsTrigger value="basic" className="flex items-center gap-2">
             <Palette className="w-4 h-4" />
             <span className="hidden sm:inline">基本设置</span>
@@ -291,6 +423,10 @@ export function SettingsPage() {
           <TabsTrigger value="ai" className="flex items-center gap-2">
             <Bot className="w-4 h-4" />
             <span className="hidden sm:inline">AI助手</span>
+          </TabsTrigger>
+          <TabsTrigger value="backup" className="flex items-center gap-2">
+            <HardDrive className="w-4 h-4" />
+            <span className="hidden sm:inline">数据库备份</span>
           </TabsTrigger>
           <TabsTrigger value="system" className="flex items-center gap-2">
             <Database className="w-4 h-4" />
@@ -764,6 +900,154 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* 数据库备份 */}
+        <TabsContent value="backup">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="w-5 h-5" />
+                  数据库备份与恢复
+                </CardTitle>
+                <CardDescription>备份当前 SQLite 数据库，或上传备份文件恢复系统数据</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="rounded-lg border bg-slate-50 p-4">
+                    <p className="text-sm text-slate-500">自动备份</p>
+                    <p className="mt-2 text-2xl font-semibold">{backupConfig.autoEnabled ? '已开启' : '未开启'}</p>
+                    <p className="mt-1 text-xs text-slate-500">间隔 {backupConfig.intervalHours} 小时</p>
+                  </div>
+                  <div className="rounded-lg border bg-slate-50 p-4">
+                    <p className="text-sm text-slate-500">上次自动备份</p>
+                    <p className="mt-2 text-sm font-medium">{formatBackupTime(backupConfig.lastBackupAt)}</p>
+                    <p className="mt-1 break-all text-xs text-slate-500">{backupConfig.lastBackupFile || '-'}</p>
+                  </div>
+                  <div className="rounded-lg border bg-slate-50 p-4">
+                    <p className="text-sm text-slate-500">备份目录</p>
+                    <p className="mt-2 break-all text-xs font-medium text-slate-700">{backupConfig.backupDir || '-'}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-start gap-3">
+                      <Download className="mt-1 h-5 w-5 text-blue-600" />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-medium">立即备份数据库</h3>
+                        <p className="mt-1 text-sm text-slate-500">生成当前数据库快照，并下载安装到本机。</p>
+                      </div>
+                    </div>
+                    <Button className="mt-4 w-full bg-blue-600 hover:bg-blue-700" onClick={handleDownloadDatabaseBackup}>
+                      <Download className="mr-2 h-4 w-4" />
+                      备份并下载
+                    </Button>
+                  </div>
+
+                  <div className="rounded-lg border p-4">
+                    <div className="flex items-start gap-3">
+                      <UploadCloud className="mt-1 h-5 w-5 text-orange-600" />
+                      <div className="min-w-0 flex-1">
+                        <h3 className="font-medium">恢复数据库</h3>
+                        <p className="mt-1 text-sm text-slate-500">支持 .db/.sqlite/.sqlite3 文件，恢复前会先备份当前数据库。</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      <Input
+                        type="file"
+                        accept=".db,.sqlite,.sqlite3"
+                        onChange={(event) => setRestoreFile(event.target.files?.[0] || null)}
+                      />
+                      {restoreFile && (
+                        <p className="break-all text-xs text-slate-500">已选择：{restoreFile.name}</p>
+                      )}
+                      <Button
+                        variant="outline"
+                        className="w-full border-orange-200 text-orange-700 hover:bg-orange-50"
+                        onClick={handleRestoreDatabase}
+                        disabled={restoreLoading}
+                      >
+                        <UploadCloud className="mr-2 h-4 w-4" />
+                        {restoreLoading ? '恢复中...' : '上传并恢复'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h3 className="font-medium">自动备份设置</h3>
+                      <p className="mt-1 text-sm text-slate-500">打开后，系统设置页加载时会检查是否到达备份时间并自动生成备份。</p>
+                    </div>
+                    <Switch
+                      checked={backupConfig.autoEnabled}
+                      onCheckedChange={(checked) => setBackupConfig((current) => ({ ...current, autoEnabled: checked }))}
+                    />
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-[220px_1fr] md:items-end">
+                    <div className="space-y-2">
+                      <Label htmlFor="backupInterval">备份间隔（小时）</Label>
+                      <Input
+                        id="backupInterval"
+                        type="number"
+                        min={1}
+                        max={720}
+                        value={backupConfig.intervalHours}
+                        onChange={(event) => setBackupConfig((current) => ({
+                          ...current,
+                          intervalHours: Math.max(1, Number(event.target.value || 24)),
+                        }))}
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={loadBackupInfo} disabled={backupLoading}>
+                        <RefreshCw className="mr-2 h-4 w-4" />
+                        刷新
+                      </Button>
+                      <Button onClick={handleSaveBackupConfig} disabled={backupSaving}>
+                        <Save className="mr-2 h-4 w-4" />
+                        {backupSaving ? '保存中...' : '保存自动备份'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>备份文件列表</CardTitle>
+                <CardDescription>系统已生成的数据库备份文件</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {backupLoading ? (
+                  <div className="py-8 text-center text-sm text-slate-500">正在加载备份文件...</div>
+                ) : backupFiles.length === 0 ? (
+                  <div className="py-8 text-center text-sm text-slate-500">暂无备份文件</div>
+                ) : (
+                  <div className="space-y-2">
+                    {backupFiles.map((file) => (
+                      <div key={file.fileName} className="flex flex-col gap-3 rounded-lg border p-3 md:flex-row md:items-center md:justify-between">
+                        <div className="min-w-0">
+                          <p className="break-all text-sm font-medium">{file.fileName}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {formatBackupSize(file.size)} · {formatBackupTime(file.updatedAt)}
+                          </p>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => handleDownloadBackupFile(file.fileName)}>
+                          <Download className="mr-2 h-4 w-4" />
+                          下载
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* 系统信息 */}

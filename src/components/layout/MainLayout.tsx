@@ -25,6 +25,9 @@ import FinancePage from '@/components/pages/FinancePage';
 import PurchaseRequestsPage from '@/components/pages/PurchaseRequestsPage';
 import ExpenseClaimsPage from '@/components/pages/ExpenseClaimsPage';
 import OrganizationPage from '@/components/pages/OrganizationPage';
+import PersonnelPage from '@/components/pages/PersonnelPage';
+import AdministrationPage from '@/components/pages/AdministrationPage';
+import HumanResourcesPage from '@/components/pages/HumanResourcesPage';
 import PermissionPage from '@/components/pages/PermissionPage';
 import ApprovalCenter from '@/components/pages/ApprovalCenter';
 import FinanceReviewPage from '@/components/pages/FinanceReviewPage';
@@ -32,7 +35,7 @@ import AIChatPage from '@/app/ai-chat/page';
 import NotificationCenterPage from '@/components/pages/NotificationCenterPage';
 import { logOperation, LogActions } from '@/lib/log';
 
-type PageKey = 'dashboard' | 'taskmanage' | 'distribution' | 'todo' | 'leads' | 'customers' | 'contacts' | 'contracts' | 'invoices' | 'followup' | 'products' | 'finance' | 'tasks' | 'salary' | 'generate' | 'ai-chat' | 'assets' | 'organization' | 'permission' | 'purchase-requests' | 'expense-claims' | 'approval-center' | 'finance-review' | 'smtp' | 'usermanage' | 'operation-logs' | 'settings' | 'notification-center';
+type PageKey = 'dashboard' | 'taskmanage' | 'distribution' | 'todo' | 'leads' | 'customers' | 'contacts' | 'contracts' | 'invoices' | 'followup' | 'products' | 'finance' | 'tasks' | 'salary' | 'generate' | 'ai-chat' | 'assets' | 'organization' | 'personnel' | 'administration' | 'human-resources' | 'permission' | 'purchase-requests' | 'expense-claims' | 'approval-center' | 'finance-review' | 'smtp' | 'usermanage' | 'operation-logs' | 'settings' | 'notification-center';
 
 const pageNames: Record<string, string> = {
   dashboard: '仪表板',
@@ -53,6 +56,9 @@ const pageNames: Record<string, string> = {
   'ai-chat': 'AI聊天',
   assets: '资产管理',
   organization: '组织管理',
+  personnel: '人事管理',
+  administration: '行政管理',
+  'human-resources': '人力资源',
   permission: '权限管理',
   'purchase-requests': '采购申请',
   'expense-claims': '费用报销',
@@ -64,6 +70,16 @@ const pageNames: Record<string, string> = {
   settings: '系统设置',
   'notification-center': '通知中心',
 };
+
+const pagePermissionMap: Record<string, string> = {
+  personnel: 'personnel',
+  administration: 'administration',
+  'human-resources': 'human-resources',
+};
+
+interface NotificationItem {
+  is_read: number;
+}
 
 interface MainLayoutProps {
   user?: {
@@ -93,9 +109,9 @@ export function MainLayout({ user }: MainLayoutProps) {
           const response = await fetch('/api/notifications?receiverId=' + user.id, {
             headers: token ? { 'Authorization': `Bearer ${token}` } : {}
           });
-          const data = await response.json();
+          const data = await response.json() as { success?: boolean; data?: NotificationItem[] };
           if (data.success) {
-            const unreadCount = (data.data || []).filter((n: any) => n.is_read === 0).length;
+            const unreadCount = (data.data || []).filter((n) => n.is_read === 0).length;
             if (unreadCount > 0) {
               setLoginUnreadCount(unreadCount);
               setShowLoginNotification(true);
@@ -132,7 +148,7 @@ export function MainLayout({ user }: MainLayoutProps) {
         // 管理员拥有所有权限
         setPermissions([
           'dashboard', 'taskmanage', 'distribution', 'todo', 'leads', 
-          'customers', 'tasks', 'generate', 'assets', 'departments', 'usermanage', 'settings',
+          'customers', 'tasks', 'generate', 'assets', 'departments', 'usermanage', 'personnel', 'administration', 'human-resources', 'database-backup', 'settings',
           'organization', 'permission', 'purchase-requests', 'expense-claims', 
           'approval-center', 'finance-review', 'notification-center'
         ]);
@@ -154,10 +170,10 @@ export function MainLayout({ user }: MainLayoutProps) {
   }, [user]);
 
   // 检查是否有权限访问某页面
-  const hasPermission = (page: string): boolean => {
+  const hasPermission = useCallback((page: string): boolean => {
     if (user?.role === 'admin') return true;
-    return permissions.includes(page);
-  };
+    return permissions.includes(pagePermissionMap[page] || page);
+  }, [permissions, user?.role]);
 
   // 导航时检查权限
   const handleNavigate = useCallback((key: string) => {
@@ -217,6 +233,12 @@ export function MainLayout({ user }: MainLayoutProps) {
         return <AssetsPage />;
       case 'organization':
         return <OrganizationPage />;
+      case 'personnel':
+        return <PersonnelPage />;
+      case 'administration':
+        return <AdministrationPage />;
+      case 'human-resources':
+        return <HumanResourcesPage />;
       case 'permission':
         return <PermissionPage />;
       case 'purchase-requests':

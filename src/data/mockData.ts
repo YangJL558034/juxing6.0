@@ -354,7 +354,6 @@ export const navMenuItems: NavMenuItem[] = [
       { key: 'contracts', label: '合同', icon: 'FileText' },
       { key: 'invoices', label: '发票', icon: 'Receipt' },
       { key: 'products', label: '产品', icon: 'Package' },
-      { key: 'assets', label: '资产管理', icon: 'Folder' },
     ]
   },
   
@@ -376,6 +375,11 @@ export const navMenuItems: NavMenuItem[] = [
     icon: 'Building',
     children: [
       { key: 'usermanage', label: '用户管理', icon: 'UserCog' },
+      { key: 'personnel', label: '人事管理', icon: 'Users' },
+      { key: 'human-resources', label: '人力资源', icon: 'Briefcase' },
+      { key: 'administration', label: '行政管理', icon: 'Home' },
+      { key: 'assets', label: '资产管理', icon: 'Folder' },
+      { key: 'salary', label: '工资工时查询', icon: 'Clock' },
     ]
   },
   
@@ -388,7 +392,6 @@ export const navMenuItems: NavMenuItem[] = [
       { key: 'todo', label: '待办事项', icon: 'CheckSquare' },
       { key: 'distribution', label: '分销达人', icon: 'Share2' },
       { key: 'finance', label: '财务明细', icon: 'DollarSign' },
-      { key: 'salary', label: '工资工时查询', icon: 'Clock' },
       { key: 'generate', label: '生成管理', icon: 'FileText' },
       { key: 'ai-chat', label: 'AI对话', icon: 'Bot' },
       { key: 'smtp', label: '邮件配置', icon: 'Mail' },

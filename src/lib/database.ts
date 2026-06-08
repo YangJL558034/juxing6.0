@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import bcrypt from 'bcryptjs';
 
 // 检测是否在构建环境中 - 只在 Next.js 构建阶段返回 true
 const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build';
@@ -10,9 +11,72 @@ const getDbPath = () => process.env.COZE_PROJECT_ENV === 'PROD'
   ? '/tmp/crm.db'  // 生产环境使用 /tmp
   : path.join(process.cwd(), 'data', 'crm.db');
 
+export function getDatabaseFilePath() {
+  return getDbPath();
+}
+
 // 延迟初始化数据库
 let _db: Database.Database | null = null;
 let _isInitialized = false;
+const backupSchedulerKey = '__crmDatabaseBackupSchedulerStarted';
+
+function backupLocalDateTime() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+}
+
+async function runScheduledDatabaseBackup(dbInstance: Database.Database) {
+  try {
+    const settings = dbInstance.prepare('SELECT * FROM database_backup_settings WHERE id = 1').get() as {
+      auto_enabled: number;
+      interval_hours: number;
+      last_backup_at: string | null;
+    } | undefined;
+
+    if (!settings?.auto_enabled) return;
+
+    const lastTime = settings.last_backup_at ? new Date(settings.last_backup_at).getTime() : 0;
+    const intervalMs = Math.max(1, Number(settings.interval_hours || 24)) * 60 * 60 * 1000;
+    if (lastTime && Date.now() < lastTime + intervalMs) return;
+
+    const backupDir = path.join(process.cwd(), 'data', 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    dbInstance.pragma('wal_checkpoint(FULL)');
+    const backupTime = backupLocalDateTime();
+    const fileName = `crm_backup_auto_${backupTime.replaceAll('-', '').replace(' ', '_').replaceAll(':', '')}.db`;
+    const filePath = path.join(backupDir, fileName);
+    await dbInstance.backup(filePath);
+    const info = fs.statSync(filePath);
+
+    dbInstance.prepare(`
+      INSERT INTO database_backup_records (file_name, file_path, file_size, backup_type, created_at)
+      VALUES (?, ?, ?, 'auto', ?)
+    `).run(fileName, filePath, info.size, backupTime);
+    dbInstance.prepare(`
+      UPDATE database_backup_settings
+      SET last_backup_at = ?, last_backup_file = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = 1
+    `).run(backupTime, fileName);
+  } catch (error) {
+    console.error('Scheduled database backup failed:', error);
+  }
+}
+
+function startDatabaseBackupScheduler(dbInstance: Database.Database) {
+  const globalState = globalThis as unknown as Record<string, boolean>;
+  if (globalState[backupSchedulerKey]) return;
+  globalState[backupSchedulerKey] = true;
+
+  setTimeout(() => {
+    void runScheduledDatabaseBackup(dbInstance);
+  }, 5000);
+  setInterval(() => {
+    void runScheduledDatabaseBackup(dbInstance);
+  }, 30 * 60 * 1000);
+}
 
 function getDb(): Database.Database {
   // 构建时返回空对象，避免数据库初始化
@@ -151,6 +215,129 @@ export function initDatabase(dbInstance: Database.Database) {
       FOREIGN KEY (employee_id) REFERENCES employees(id)
     );
 
+    CREATE TABLE IF NOT EXISTS onboarding_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT DEFAULT '待审核',
+      name TEXT NOT NULL,
+      gender TEXT,
+      phone TEXT,
+      id_card TEXT,
+      position TEXT,
+      department TEXT,
+      hire_date TEXT,
+      recruitment_source TEXT,
+      data_json TEXT NOT NULL,
+      reviewer_name TEXT,
+      hr_opinion TEXT,
+      reviewed_at DATETIME,
+      employee_id INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME,
+      FOREIGN KEY (employee_id) REFERENCES employees(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS dormitory_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT DEFAULT '待审核',
+      name TEXT NOT NULL,
+      phone TEXT,
+      department TEXT,
+      position TEXT,
+      id_card TEXT,
+      expected_check_in_date TEXT,
+      reason TEXT,
+      data_json TEXT NOT NULL,
+      reviewer_name TEXT,
+      review_opinion TEXT,
+      reviewed_at DATETIME,
+      room_no TEXT,
+      bed_no TEXT,
+      room_bed TEXT,
+      key_issued TEXT,
+      handler_name TEXT,
+      checked_in_at DATETIME,
+      checkout_apply_date TEXT,
+      move_out_date TEXT,
+      checkout_reason TEXT,
+      key_returned TEXT,
+      checkout_handler_name TEXT,
+      checked_out_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS dormitory_rooms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_no TEXT NOT NULL UNIQUE,
+      capacity INTEGER DEFAULT 0,
+      remark TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS dormitory_beds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id INTEGER NOT NULL,
+      bed_no TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(room_id, bed_no),
+      FOREIGN KEY (room_id) REFERENCES dormitory_rooms(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS water_meter_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_no TEXT NOT NULL,
+      reading_date TEXT NOT NULL,
+      previous_reading REAL,
+      previous_reading_text TEXT,
+      current_reading REAL NOT NULL,
+      current_reading_text TEXT,
+      usage_amount REAL,
+      unit_price REAL,
+      fee_amount REAL,
+      recorder_name TEXT,
+      remark TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS recruitment_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      department TEXT,
+      location TEXT,
+      salary_range TEXT,
+      headcount INTEGER DEFAULT 1,
+      deadline TEXT,
+      requirements TEXT,
+      responsibilities TEXT,
+      benefits TEXT,
+      status TEXT DEFAULT '招聘中',
+      sort_order INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS recruitment_applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id INTEGER NOT NULL,
+      job_title TEXT NOT NULL,
+      applicant_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      email TEXT,
+      education TEXT,
+      experience_years TEXT,
+      current_company TEXT,
+      expected_salary TEXT,
+      message TEXT,
+      resume_url TEXT NOT NULL,
+      resume_file_name TEXT NOT NULL,
+      resume_file_size INTEGER DEFAULT 0,
+      status TEXT DEFAULT '新投递',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME,
+      FOREIGN KEY (job_id) REFERENCES recruitment_jobs(id)
+    );
+
     CREATE TABLE IF NOT EXISTS employee_salary_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       employee_id INTEGER NOT NULL,
@@ -232,6 +419,64 @@ export function initDatabase(dbInstance: Database.Database) {
       FOREIGN KEY (employee_id) REFERENCES employees(id)
     )
   `);
+
+  dbInstance.exec(`
+    CREATE INDEX IF NOT EXISTS idx_onboarding_status ON onboarding_records(status);
+    CREATE INDEX IF NOT EXISTS idx_onboarding_name ON onboarding_records(name);
+    CREATE INDEX IF NOT EXISTS idx_onboarding_created_at ON onboarding_records(created_at);
+    CREATE INDEX IF NOT EXISTS idx_dormitory_status ON dormitory_records(status);
+    CREATE INDEX IF NOT EXISTS idx_dormitory_name ON dormitory_records(name);
+    CREATE INDEX IF NOT EXISTS idx_dormitory_created_at ON dormitory_records(created_at);
+    CREATE INDEX IF NOT EXISTS idx_dormitory_beds_room_id ON dormitory_beds(room_id);
+    CREATE INDEX IF NOT EXISTS idx_water_meter_room_no ON water_meter_records(room_no);
+    CREATE INDEX IF NOT EXISTS idx_water_meter_reading_date ON water_meter_records(reading_date);
+  `);
+
+  try {
+    const dormitoryColumns = dbInstance.prepare("PRAGMA table_info(dormitory_records)").all() as { name: string }[];
+    if (!dormitoryColumns.some(col => col.name === 'room_no')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN room_no TEXT');
+    }
+    if (!dormitoryColumns.some(col => col.name === 'bed_no')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN bed_no TEXT');
+    }
+    if (!dormitoryColumns.some(col => col.name === 'checkout_apply_date')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN checkout_apply_date TEXT');
+    }
+    if (!dormitoryColumns.some(col => col.name === 'move_out_date')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN move_out_date TEXT');
+    }
+    if (!dormitoryColumns.some(col => col.name === 'checkout_reason')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN checkout_reason TEXT');
+    }
+    if (!dormitoryColumns.some(col => col.name === 'key_returned')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN key_returned TEXT');
+    }
+    if (!dormitoryColumns.some(col => col.name === 'checkout_handler_name')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN checkout_handler_name TEXT');
+    }
+    if (!dormitoryColumns.some(col => col.name === 'checked_out_at')) {
+      dbInstance.exec('ALTER TABLE dormitory_records ADD COLUMN checked_out_at DATETIME');
+    }
+    dbInstance.exec(`
+      CREATE INDEX IF NOT EXISTS idx_dormitory_room_no ON dormitory_records(room_no);
+      CREATE INDEX IF NOT EXISTS idx_dormitory_bed_no ON dormitory_records(bed_no);
+    `);
+  } catch (e) {
+    // 忽略已有库迁移错误
+  }
+
+  try {
+    const waterMeterColumns = dbInstance.prepare("PRAGMA table_info(water_meter_records)").all() as { name: string }[];
+    if (!waterMeterColumns.some(col => col.name === 'previous_reading_text')) {
+      dbInstance.exec('ALTER TABLE water_meter_records ADD COLUMN previous_reading_text TEXT');
+    }
+    if (!waterMeterColumns.some(col => col.name === 'current_reading_text')) {
+      dbInstance.exec('ALTER TABLE water_meter_records ADD COLUMN current_reading_text TEXT');
+    }
+  } catch (e) {
+    // 忽略已有库迁移错误
+  }
 
   // 资产表
   dbInstance.exec(`
@@ -482,6 +727,33 @@ export function initDatabase(dbInstance: Database.Database) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  dbInstance.exec(`
+    CREATE TABLE IF NOT EXISTS database_backup_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      auto_enabled INTEGER DEFAULT 0,
+      interval_hours INTEGER DEFAULT 24,
+      last_backup_at TEXT,
+      last_backup_file TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  dbInstance.exec(`
+    CREATE TABLE IF NOT EXISTS database_backup_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      file_size INTEGER DEFAULT 0,
+      backup_type TEXT DEFAULT 'manual',
+      created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime'))
+    )
+  `);
+
+  const backupSettingsExists = dbInstance.prepare('SELECT id FROM database_backup_settings WHERE id = 1').get();
+  if (!backupSettingsExists) {
+    dbInstance.prepare('INSERT INTO database_backup_settings (id) VALUES (1)').run();
+  }
 
   // 验证码表
   dbInstance.exec(`
@@ -798,7 +1070,6 @@ export function initDatabase(dbInstance: Database.Database) {
   // 插入默认管理员账号
   const adminExists = dbInstance.prepare('SELECT id FROM users WHERE username = ?').get('admin');
   if (!adminExists) {
-    const bcrypt = require('bcryptjs');
     const hashedPassword = bcrypt.hashSync('admin123', 10);
     dbInstance.prepare(`
       INSERT INTO users (username, password, name, role, department, email)
@@ -837,6 +1108,9 @@ export function initDatabase(dbInstance: Database.Database) {
     
     // 组织人事
     { code: 'usermanage', name: '用户管理', description: '管理系统用户' },
+    { code: 'personnel', name: '人事管理', description: '管理员工入职登记和员工档案' },
+    { code: 'administration', name: '行政管理', description: '管理员工住宿申请和入住办理' },
+    { code: 'human-resources', name: '人力资源', description: '管理招聘职位和简历投递' },
     
     // 系统管理
     { code: 'taskmanage', name: '任务管理', description: '任务管理模块' },
@@ -847,6 +1121,7 @@ export function initDatabase(dbInstance: Database.Database) {
     { code: 'generate', name: '生成管理', description: '生成内容管理' },
     { code: 'ai-chat', name: 'AI对话', description: 'AI对话功能' },
     { code: 'smtp', name: '邮件配置', description: '邮件发送配置' },
+    { code: 'database-backup', name: '数据库备份', description: '备份和恢复系统数据库' },
     { code: 'operation-logs', name: '操作日志', description: '查看操作日志' },
     { code: 'settings', name: '系统设置', description: '系统配置管理' },
     
@@ -1238,6 +1513,8 @@ export function initDatabase(dbInstance: Database.Database) {
   } catch (error) {
     console.error('清理过期日志失败:', error);
   }
+
+  startDatabaseBackupScheduler(dbInstance);
 }
 
 // 清理离职超过一周的员工数据

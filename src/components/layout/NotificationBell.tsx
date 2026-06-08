@@ -18,6 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { NotificationDetailSections, isRecruitmentNotification } from '@/components/notifications/NotificationDetailSections';
 
 interface Notification {
   id: number;
@@ -459,6 +460,13 @@ export function NotificationBell({ userId, userName }: NotificationBellProps) {
             </div>
             
             {/* 内容 */}
+            {isRecruitmentNotification(selectedNotification) ? (
+              <NotificationDetailSections
+                notification={selectedNotification}
+                onDownloadAttachment={handleDownloadAttachment}
+              />
+            ) : (
+              <>
             {selectedNotification.content && (
               <div className="bg-gray-50 rounded-lg p-4">
                 <h4 className="font-medium mb-2">通知内容:</h4>
@@ -522,6 +530,8 @@ export function NotificationBell({ userId, userName }: NotificationBellProps) {
                 <MailX className="w-4 h-4" />
                 邮件发送失败: {selectedNotification.email_error}
               </div>
+            )}
+              </>
             )}
           </div>
         )}

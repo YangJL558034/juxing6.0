@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/accordion';
 import { Bell, Send, Mail, Search, Check, AlertCircle, Upload, X, FileText, Image, Download, Eye, Clock, Paperclip, ChevronDown, Calendar, RefreshCw } from 'lucide-react';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
+import { NotificationDetailSections, isRecruitmentNotification } from '@/components/notifications/NotificationDetailSections';
 
 interface User {
   id: number;
@@ -48,6 +49,7 @@ interface NotificationRecord {
   sender_name?: string;
   created_at: string;
   is_read: number;
+  type?: string;
   email_sent: number;
   email_error?: string;
   attachment_file?: string;
@@ -833,6 +835,13 @@ export default function NotificationCenterPage() {
               </div>
               
               {/* 内容 */}
+              {isRecruitmentNotification(selectedNotification) ? (
+                <NotificationDetailSections
+                  notification={selectedNotification}
+                  onDownloadAttachment={handleDownloadAttachment}
+                />
+              ) : (
+                <>
               {selectedNotification.content && (
                 <div className="bg-gray-50 rounded-lg p-4">
                   <h4 className="font-medium mb-2">通知内容:</h4>
@@ -894,6 +903,8 @@ export default function NotificationCenterPage() {
                   <AlertCircle className="w-4 h-4" />
                   邮件发送失败: {selectedNotification.email_error}
                 </div>
+              )}
+                </>
               )}
             </div>
           )}

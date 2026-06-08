@@ -35,6 +35,7 @@ import {
   Trash2,
   User,
   Bell,
+  Briefcase,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { navMenuItems, NavMenuItem } from '@/data/mockData';
@@ -84,6 +85,7 @@ const iconMap: Record<string, React.ElementType> = {
   Landmark,
   Bot,
   Bell,
+  Briefcase,
 };
 
 interface SidebarProps {
@@ -115,6 +117,9 @@ const modulePermissionMap: Record<string, string> = {
   'ai-chat': 'ai-chat',
   'assets': 'assets',
   'usermanage': 'usermanage',
+  'personnel': 'personnel',
+  'administration': 'administration',
+  'human-resources': 'human-resources',
   'settings': 'settings',
   'purchase-requests': 'purchase-requests',
   'expense-claims': 'expense-claims',
