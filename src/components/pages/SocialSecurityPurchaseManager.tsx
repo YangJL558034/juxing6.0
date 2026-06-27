@@ -604,7 +604,7 @@ export default function SocialSecurityPurchaseManager() {
                   <TableCell>{display(record.idCard)}</TableCell>
                   <TableCell>{display(record.phone)}</TableCell>
                   <TableCell>{display(record.department)}</TableCell>
-                  <TableCell>{display(record.contractStatus || record.remarks)}</TableCell>
+                  <TableCell>-</TableCell>
                   <TableCell>{formatDateTime(record.createdAt)}</TableCell>
                   <TableCell>-</TableCell>
                   <TableCell>-</TableCell>

@@ -584,6 +584,33 @@ export function initDatabase(dbInstance: Database.Database) {
       deleted_at DATETIME
     );
 
+    CREATE TABLE IF NOT EXISTS leave_request_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      status TEXT DEFAULT '待审核',
+      employee_id INTEGER,
+      employee_name TEXT NOT NULL,
+      id_card TEXT,
+      phone TEXT,
+      department TEXT,
+      position TEXT,
+      leave_date TEXT NOT NULL,
+      leave_start_date TEXT,
+      leave_end_date TEXT,
+      duration TEXT DEFAULT 'full',
+      half_day_period TEXT,
+      leave_type TEXT,
+      reason TEXT,
+      applicant_signature_data_url TEXT,
+      created_by_name TEXT,
+      reviewer_name TEXT,
+      reviewed_at DATETIME,
+      exported_at DATETIME,
+      printed_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME,
+      deleted_at DATETIME
+    );
+
     CREATE TABLE IF NOT EXISTS dormitory_records (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       status TEXT DEFAULT '待审核',
@@ -683,6 +710,36 @@ export function initDatabase(dbInstance: Database.Database) {
       recorder_name TEXT,
       remark TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS item_inventory (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      category TEXT DEFAULT '',
+      unit TEXT DEFAULT '个',
+      quantity INTEGER DEFAULT 0,
+      unit_price REAL DEFAULT 0,
+      remark TEXT DEFAULT '',
+      created_at DATETIME DEFAULT (datetime('now', '+8 hours')),
+      updated_at DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS item_claim_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id INTEGER NOT NULL,
+      item_name TEXT NOT NULL,
+      applicant_id INTEGER,
+      applicant_name TEXT NOT NULL,
+      department TEXT DEFAULT '',
+      quantity INTEGER DEFAULT 1,
+      reason TEXT DEFAULT '',
+      status TEXT DEFAULT '待审核',
+      reviewer_name TEXT DEFAULT '',
+      reviewed_at DATETIME,
+      created_at DATETIME DEFAULT (datetime('now', '+8 hours')),
+      updated_at DATETIME,
+      deleted_at DATETIME,
+      FOREIGN KEY (item_id) REFERENCES item_inventory(id)
     );
 
     CREATE TABLE IF NOT EXISTS recruitment_jobs (
@@ -897,6 +954,31 @@ export function initDatabase(dbInstance: Database.Database) {
       { name: 'updated_at', definition: 'DATETIME' },
       { name: 'deleted_at', definition: 'DATETIME' },
     ]);
+    ensureColumns(dbInstance, 'leave_request_records', [
+      { name: 'status', definition: "TEXT DEFAULT '待审核'" },
+      { name: 'employee_id', definition: 'INTEGER' },
+      { name: 'employee_name', definition: 'TEXT' },
+      { name: 'id_card', definition: 'TEXT' },
+      { name: 'phone', definition: 'TEXT' },
+      { name: 'department', definition: 'TEXT' },
+      { name: 'position', definition: 'TEXT' },
+      { name: 'leave_date', definition: 'TEXT' },
+      { name: 'leave_start_date', definition: 'TEXT' },
+      { name: 'leave_end_date', definition: 'TEXT' },
+      { name: 'duration', definition: "TEXT DEFAULT 'full'" },
+      { name: 'half_day_period', definition: 'TEXT' },
+      { name: 'leave_type', definition: 'TEXT' },
+      { name: 'reason', definition: 'TEXT' },
+      { name: 'applicant_signature_data_url', definition: 'TEXT' },
+      { name: 'created_by_name', definition: 'TEXT' },
+      { name: 'reviewer_name', definition: 'TEXT' },
+      { name: 'reviewed_at', definition: 'DATETIME' },
+      { name: 'exported_at', definition: 'DATETIME' },
+      { name: 'printed_at', definition: 'DATETIME' },
+      { name: 'created_at', definition: 'DATETIME DEFAULT CURRENT_TIMESTAMP' },
+      { name: 'updated_at', definition: 'DATETIME' },
+      { name: 'deleted_at', definition: 'DATETIME' },
+    ]);
     ensureColumns(dbInstance, 'dormitory_records', [
       { name: 'status', definition: 'TEXT' },
       { name: 'name', definition: 'TEXT' },
@@ -946,6 +1028,11 @@ export function initDatabase(dbInstance: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_social_security_purchase_id_card ON social_security_purchase_records(id_card);
     CREATE INDEX IF NOT EXISTS idx_social_security_purchase_created_at ON social_security_purchase_records(created_at);
     CREATE INDEX IF NOT EXISTS idx_social_security_purchase_deleted_at ON social_security_purchase_records(deleted_at);
+    CREATE INDEX IF NOT EXISTS idx_leave_request_employee ON leave_request_records(employee_id);
+    CREATE INDEX IF NOT EXISTS idx_leave_request_name ON leave_request_records(employee_name);
+    CREATE INDEX IF NOT EXISTS idx_leave_request_status ON leave_request_records(status);
+    CREATE INDEX IF NOT EXISTS idx_leave_request_date ON leave_request_records(leave_date);
+    CREATE INDEX IF NOT EXISTS idx_leave_request_deleted_at ON leave_request_records(deleted_at);
     CREATE INDEX IF NOT EXISTS idx_dormitory_status ON dormitory_records(status);
     CREATE INDEX IF NOT EXISTS idx_dormitory_name ON dormitory_records(name);
     CREATE INDEX IF NOT EXISTS idx_dormitory_created_at ON dormitory_records(created_at);
@@ -956,6 +1043,10 @@ export function initDatabase(dbInstance: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_dormitory_delete_records_deleted_by ON dormitory_delete_records(deleted_by_user_id);
     CREATE INDEX IF NOT EXISTS idx_water_meter_room_no ON water_meter_records(room_no);
     CREATE INDEX IF NOT EXISTS idx_water_meter_reading_date ON water_meter_records(reading_date);
+    CREATE INDEX IF NOT EXISTS idx_item_inventory_name ON item_inventory(name);
+    CREATE INDEX IF NOT EXISTS idx_item_claim_records_item_id ON item_claim_records(item_id);
+    CREATE INDEX IF NOT EXISTS idx_item_claim_records_status ON item_claim_records(status);
+    CREATE INDEX IF NOT EXISTS idx_item_claim_records_created_at ON item_claim_records(created_at);
   `);
 
   try {
@@ -2421,21 +2512,29 @@ const monthlyRecordSelect = `
 export const query = {
   // 用户相关
   findUserByUsername: db.prepare(`
-      SELECT u.*, COALESCE(d.name, u.department) as department 
+      SELECT u.*, COALESCE(d.name, d_text.name, u.department) as department, COALESCE(u.department_id, d_text.id) as department_id
       FROM users u 
       LEFT JOIN departments d ON u.department_id = d.id 
+      LEFT JOIN departments d_text ON CAST(d_text.id AS TEXT) = u.department
       WHERE u.username = ?
     `),
   findUserById: db.prepare(`
-      SELECT u.*, COALESCE(d.name, u.department) as department 
+      SELECT u.*, COALESCE(d.name, d_text.name, u.department) as department, COALESCE(u.department_id, d_text.id) as department_id
       FROM users u 
       LEFT JOIN departments d ON u.department_id = d.id 
+      LEFT JOIN departments d_text ON CAST(d_text.id AS TEXT) = u.department
       WHERE u.id = ?
     `),
   getUserByEmail: db.prepare('SELECT * FROM users WHERE email = ?'),
   createUser: db.prepare('INSERT INTO users (username, password, name, role, department, email) VALUES (?, ?, ?, ?, ?, ?)'),
   updateUser: db.prepare('UPDATE users SET name = ?, role = ?, department = ?, email = ? WHERE id = ?'),
-  getAllUsers: db.prepare('SELECT id, username, name, role, department, email, created_at FROM users ORDER BY created_at DESC'),
+  getAllUsers: db.prepare(`
+    SELECT u.id, u.username, u.name, u.role, COALESCE(d.name, d_text.name, u.department) as department, COALESCE(u.department_id, d_text.id) as department_id, u.email, u.created_at
+    FROM users u
+    LEFT JOIN departments d ON u.department_id = d.id
+    LEFT JOIN departments d_text ON CAST(d_text.id AS TEXT) = u.department
+    ORDER BY u.created_at DESC
+  `),
   updateUserPassword: db.prepare('UPDATE users SET password = ? WHERE id = ?'),
   deleteUser: db.prepare('DELETE FROM users WHERE id = ?'),
   
@@ -2492,9 +2591,22 @@ export const query = {
   
   // 用户管理相关
   getAllUsersDetail: db.prepare(`
-      SELECT u.id, u.username, u.name, u.role, COALESCE(d.name, u.department) as department, u.department_id, u.position_id, u.manager_id, u.email, u.created_at 
+      SELECT
+        u.id,
+        u.username,
+        u.name,
+        u.role,
+        COALESCE(d.name, d_text.name, u.department) as department,
+        COALESCE(u.department_id, d_text.id) as department_id,
+        u.position_id,
+        u.manager_id,
+        manager.name as manager_name,
+        u.email,
+        u.created_at
       FROM users u 
       LEFT JOIN departments d ON u.department_id = d.id
+      LEFT JOIN departments d_text ON CAST(d_text.id AS TEXT) = u.department
+      LEFT JOIN users manager ON manager.id = u.manager_id
     `),
   
   // 权限相关

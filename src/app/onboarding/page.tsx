@@ -11,6 +11,8 @@ import {
   FilePenLine,
   HeartPulse,
   IdCard,
+  Maximize2,
+  Minimize2,
   UserRound,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -418,6 +420,13 @@ function SignatureStep({
   hasSignature: boolean;
   setHasSignature: (value: boolean) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const openExpanded = () => {
+    window.alert('请把手机横过来签字，签完点“收起”。');
+    setExpanded(true);
+  };
+
   const getPoint = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
@@ -468,23 +477,40 @@ function SignatureStep({
       <p className="text-sm leading-6 text-slate-600">
         本人已充分了解上述资料的真实性提交方式并订立劳动合同的前提条件，本人自愿遵守以上承诺内容。
       </p>
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-800">
-          签名
-          <RequiredMark />
-        </label>
-        <canvas
-          ref={canvasRef}
-          width={720}
-          height={260}
-          onPointerDown={start}
-          onPointerMove={draw}
-          className="h-32 w-full touch-none rounded-lg border border-dashed border-slate-300 bg-white"
-        />
-        <button type="button" onClick={clear} className="mx-auto flex items-center gap-1 text-sm text-blue-600">
-          <CircleHelp className="h-4 w-4" />
-          清除{hasSignature ? '' : '签名'}
-        </button>
+      <div className={expanded ? 'fixed inset-0 z-50 flex flex-col bg-white p-4' : 'space-y-2'}>
+        <div className={expanded ? 'flex min-h-0 flex-1 flex-col' : 'space-y-2'}>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <label className="text-sm font-medium text-slate-800">
+                {expanded ? '横屏签字' : '签名'}
+                <RequiredMark />
+              </label>
+              {expanded && <p className="text-xs text-slate-500">请横屏签字，签完点收起。</p>}
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => {
+              if (expanded) {
+                setExpanded(false);
+              } else {
+                openExpanded();
+              }
+            }}>
+              {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+              {expanded ? '收起' : '放大签字'}
+            </Button>
+          </div>
+          <canvas
+            ref={canvasRef}
+            width={720}
+            height={260}
+            onPointerDown={start}
+            onPointerMove={draw}
+            className={`${expanded ? 'h-[52dvh] min-h-[240px]' : 'h-32'} w-full touch-none rounded-lg border border-dashed border-slate-300 bg-white`}
+          />
+          <button type="button" onClick={clear} className="mx-auto flex items-center gap-1 text-sm text-blue-600">
+            <CircleHelp className="h-4 w-4" />
+            清除{hasSignature ? '' : '签名'}
+          </button>
+        </div>
       </div>
       <TextField label="日期" required type="date" value={data.signatureDate} onChange={(value) => update('signatureDate', value)} placeholder="请选择日期" />
     </SectionCard>

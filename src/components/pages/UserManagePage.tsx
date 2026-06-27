@@ -82,6 +82,49 @@ interface Permission {
   granted?: boolean;
 }
 
+interface RegistrationCodeRecord {
+  id: number;
+  code: string;
+  permissions: string;
+  used?: number | boolean;
+  expires_at?: string | null;
+  created_at?: string | null;
+  user_name?: string | null;
+}
+
+interface NotificationRecord {
+  id: number;
+  title?: string | null;
+  content?: string | null;
+  created_at?: string | null;
+  read_at?: string | null;
+  sender_name?: string | null;
+  receiver_name?: string | null;
+  is_read?: number | boolean;
+  email_sent?: number | boolean | null;
+  email_error?: string | null;
+}
+
+interface UsersResponse {
+  success?: boolean;
+  users?: User[];
+}
+
+interface DepartmentsResponse {
+  success?: boolean;
+  departments?: Department[];
+}
+
+interface PositionsResponse {
+  success?: boolean;
+  positions?: Position[];
+}
+
+interface PermissionsResponse {
+  success?: boolean;
+  permissions?: Permission[];
+}
+
 export default function UserManagePage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -113,7 +156,7 @@ export default function UserManagePage() {
   const [regCodeExpireHours, setRegCodeExpireHours] = useState(24); // 默认24小时
   const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
-  const [regCodeList, setRegCodeList] = useState<any[]>([]);
+  const [regCodeList, setRegCodeList] = useState<RegistrationCodeRecord[]>([]);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState('');
   const [selectedPositionId, setSelectedPositionId] = useState('');
 
@@ -140,7 +183,7 @@ export default function UserManagePage() {
   
   // 通知记录
   const [recordDialogOpen, setRecordDialogOpen] = useState(false);
-  const [notificationRecords, setNotificationRecords] = useState<any[]>([]);
+  const [notificationRecords, setNotificationRecords] = useState<NotificationRecord[]>([]);
   const [loadingRecords, setLoadingRecords] = useState(false);
 
   const [formData, setFormData] = useState({
@@ -154,18 +197,12 @@ export default function UserManagePage() {
     email: '',
   });
 
-  useEffect(() => {
-    fetchUsers();
-    fetchDepartments();
-    fetchPositions();
-  }, []);
-
   const fetchUsers = async () => {
     try {
       const res = await fetch('/api/users');
-      const data = await res.json();
+      const data = await res.json() as UsersResponse;
       if (data.success) {
-        setUsers(data.users);
+        setUsers(data.users || []);
       }
     } catch (error) {
       console.error('获取用户列表失败:', error);
@@ -177,7 +214,7 @@ export default function UserManagePage() {
   const fetchDepartments = async () => {
     try {
       const res = await fetch('/api/departments');
-      const data = await res.json();
+      const data = await res.json() as DepartmentsResponse;
       if (data.success) {
         setDepartments(data.departments || []);
       }
@@ -189,7 +226,7 @@ export default function UserManagePage() {
   const fetchPositions = async () => {
     try {
       const res = await fetch('/api/positions');
-      const data = await res.json();
+      const data = await res.json() as PositionsResponse;
       if (data.success) {
         setPositions(data.positions || []);
       }
@@ -201,14 +238,20 @@ export default function UserManagePage() {
   const fetchPermissions = async (userId: number) => {
     try {
       const res = await fetch(`/api/permissions?userId=${userId}`);
-      const data = await res.json();
+      const data = await res.json() as PermissionsResponse;
       if (data.success) {
-        setPermissions(data.permissions);
+        setPermissions(data.permissions || []);
       }
     } catch (error) {
       console.error('获取权限列表失败:', error);
     }
   };
+
+  useEffect(() => {
+    void fetchUsers();
+    void fetchDepartments();
+    void fetchPositions();
+  }, []);
 
   const handleAddUser = () => {
     setSelectedUser(null);
@@ -223,7 +266,7 @@ export default function UserManagePage() {
       password: '',
       name: user.name,
       role: user.role,
-      department: user.department,
+      department: user.department_id ? String(user.department_id) : user.department,
       position_id: String(user.position_id || ''),
       manager_id: String(user.manager_id || ''),
       email: user.email || '',
@@ -256,6 +299,8 @@ export default function UserManagePage() {
             department: formData.department,
             email: formData.email,
             password: formData.password || undefined,
+            position_id: formData.position_id,
+            manager_id: formData.manager_id,
           }),
         });
         const data = await res.json();
@@ -993,7 +1038,7 @@ export default function UserManagePage() {
           <AlertDialogHeader>
             <AlertDialogTitle>确认删除</AlertDialogTitle>
             <AlertDialogDescription>
-              确定要删除用户 "{selectedUser?.name}" 吗？此操作不可恢复。
+              确定要删除用户 &quot;{selectedUser?.name}&quot; 吗？此操作不可恢复。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1156,7 +1201,7 @@ export default function UserManagePage() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  regCodeList.map((code: any) => (
+                  regCodeList.map((code) => (
                     <TableRow key={code.id}>
                       <TableCell className="font-mono text-sm">{code.code}</TableCell>
                       <TableCell className="max-w-32 truncate" title={code.permissions}>

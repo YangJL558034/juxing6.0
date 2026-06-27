@@ -56,6 +56,7 @@ import type { LaborContractTerminationFormData, LaborContractTerminationRecord }
 import ResignationAdminSection from './ResignationAdminSection';
 import ResignationCertificateAdminSection from './ResignationCertificateAdminSection';
 import SocialSecurityAdminSection from './SocialSecurityAdminSection';
+import LeaveRequestAdminSection from './LeaveRequestAdminSection';
 import YearMonthGroupedTableBody from './YearMonthGroupedTableBody';
 
 interface OnboardingCounts {
@@ -263,7 +264,8 @@ export type PersonnelSectionKey =
   | 'work-certificate'
   | 'resignation'
   | 'resignation-certificate'
-  | 'labor-termination';
+  | 'labor-termination'
+  | 'leave-request';
 
 const personnelSectionLabels: Record<PersonnelSectionKey, string> = {
   onboarding: '入职登记',
@@ -274,6 +276,7 @@ const personnelSectionLabels: Record<PersonnelSectionKey, string> = {
   resignation: '离职申请',
   'resignation-certificate': '离职证明',
   'labor-termination': '解除劳动合同',
+  'leave-request': '请假申请',
 };
 
 export default function PersonnelPage({ section = 'onboarding' }: { section?: PersonnelSectionKey }) {
@@ -1852,6 +1855,12 @@ export default function PersonnelPage({ section = 'onboarding' }: { section?: Pe
           </Table>
         </div>
       </div>
+      )}
+
+      {section === 'leave-request' && (
+        <div id="personnel-leave-request-section" className="scroll-mt-24">
+          <LeaveRequestAdminSection />
+        </div>
       )}
 
       <Dialog open={workCertificateViewOpen} onOpenChange={setWorkCertificateViewOpen}>

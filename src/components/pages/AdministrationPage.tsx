@@ -47,6 +47,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { chinaCurrentMonth, chinaToday, formatChinaDateTime, parseChinaTime } from '@/lib/china-time';
 import { cn } from '@/lib/utils';
+import ItemManagementPanel from '@/components/pages/ItemManagementPanel';
 import type {
   DormitoryBed,
   DormitoryDeleteRecord,
@@ -138,13 +139,14 @@ interface WaterMeterListResponse {
 }
 
 type DormitoryListTab = DormitoryStatus | '删除记录';
-export type AdministrationSectionKey = 'dormitory' | 'rooms' | 'beds' | 'water-meter';
+export type AdministrationSectionKey = 'dormitory' | 'items' | 'rooms' | 'beds' | 'water-meter';
 
 const emptyCounts: DormitoryCounts = { total: 0, pending: 0, reviewed: 0, checkedIn: 0, checkedOut: 0 };
 const emptyWaterSummary: WaterMeterSummary = { total: 0, totalUsage: 0, totalFee: 0 };
 const roomTypeOptions = ['未设置', '男生寝室', '女生寝室'];
 
 const administrationSectionLabels: Record<AdministrationSectionKey, string> = {
+  items: '物品管理',
   dormitory: '住宿申请',
   rooms: '房号管理',
   beds: '床号管理',
@@ -1122,6 +1124,8 @@ export default function AdministrationPage({ section = 'dormitory' }: { section?
           )}
         </div>
       </div>
+
+      {section === 'items' && <ItemManagementPanel />}
 
       {section === 'dormitory' && (
       <>

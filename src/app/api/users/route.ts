@@ -2,15 +2,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, db } from '@/lib/database';
 import bcrypt from 'bcryptjs';
 
+interface UserRow {
+  id: number;
+  role: string;
+}
+
+interface PermissionRow {
+  code: string;
+  name: string;
+  granted: number | null;
+}
+
+interface DepartmentRow {
+  id: number;
+  name: string;
+}
+
+function resolveDepartment(department: unknown) {
+  const value = String(department || '').trim();
+  if (!value) return { name: '', id: null as number | null };
+
+  const row = db.prepare(`
+    SELECT id, name
+    FROM departments
+    WHERE CAST(id AS TEXT) = ?
+       OR name = ?
+    LIMIT 1
+  `).get(value, value) as DepartmentRow | undefined;
+
+  return row ? { name: row.name, id: row.id } : { name: value, id: null as number | null };
+}
+
 // 获取所有用户
 export async function GET(request: NextRequest) {
   try {
-    const users = query.getAllUsersDetail.all();
+    const users = query.getAllUsersDetail.all() as Array<{ id: number; role: string }>;
     
     // 为每个用户获取权限
-    const usersWithPermissions = users.map((user: any) => {
-      const permissions = query.getUserPermissions.all(user.id);
-      const permissionList = permissions.map((p: any) => ({
+    const usersWithPermissions = users.map((user) => {
+      const permissions = query.getUserPermissions.all(user.id) as PermissionRow[];
+      const permissionList = permissions.map((p) => ({
         code: p.code,
         name: p.name,
         granted: p.granted === null ? (user.role === 'admin') : p.granted === 1 // 管理员默认有权限，普通用户需要有权限记录
@@ -45,11 +76,12 @@ export async function POST(request: NextRequest) {
     
     const posId = position_id && position_id !== '0' ? parseInt(position_id) : null;
     const mgrId = manager_id && manager_id !== '0' ? parseInt(manager_id) : null;
+    const resolvedDepartment = resolveDepartment(department);
     
     const result = db!.prepare(`
-      INSERT INTO users (username, password, name, role, department, email, position_id, manager_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(username, hashedPassword, name, role || 'user', department || '', email || '', posId, mgrId);
+      INSERT INTO users (username, password, name, role, department, department_id, email, position_id, manager_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(username, hashedPassword, name, role || 'user', resolvedDepartment.name, resolvedDepartment.id, email || '', posId, mgrId);
     
     return NextResponse.json({ 
       success: true, 
@@ -74,14 +106,15 @@ export async function PUT(request: NextRequest) {
     
     const posId = position_id && position_id !== '0' ? parseInt(position_id) : null;
     const mgrId = manager_id && manager_id !== '0' ? parseInt(manager_id) : null;
+    const resolvedDepartment = resolveDepartment(department);
     
     if (password) {
       const hashedPassword = bcrypt.hashSync(password, 10);
-      db!.prepare('UPDATE users SET name = ?, role = ?, department = ?, email = ?, password = ?, position_id = ?, manager_id = ? WHERE id = ?')
-        .run(name, role, department, email || '', hashedPassword, posId, mgrId, id);
+      db!.prepare('UPDATE users SET name = ?, role = ?, department = ?, department_id = ?, email = ?, password = ?, position_id = ?, manager_id = ? WHERE id = ?')
+        .run(name, role, resolvedDepartment.name, resolvedDepartment.id, email || '', hashedPassword, posId, mgrId, id);
     } else {
-      db!.prepare('UPDATE users SET name = ?, role = ?, department = ?, email = ?, position_id = ?, manager_id = ? WHERE id = ?')
-        .run(name, role, department, email || '', posId, mgrId, id);
+      db!.prepare('UPDATE users SET name = ?, role = ?, department = ?, department_id = ?, email = ?, position_id = ?, manager_id = ? WHERE id = ?')
+        .run(name, role, resolvedDepartment.name, resolvedDepartment.id, email || '', posId, mgrId, id);
     }
     
     return NextResponse.json({ success: true, message: '用户更新成功' });
@@ -102,8 +135,8 @@ export async function DELETE(request: NextRequest) {
     }
     
     // 不能删除管理员
-    const user = query.findUserById.get(parseInt(id));
-    if (user && (user as any).username === 'admin') {
+    const user = query.findUserById.get(parseInt(id)) as (UserRow & { username?: string }) | undefined;
+    if (user && user.username === 'admin') {
       return NextResponse.json({ success: false, error: '不能删除管理员账号' }, { status: 400 });
     }
     

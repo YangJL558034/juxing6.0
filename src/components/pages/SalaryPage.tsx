@@ -39,6 +39,8 @@ import { Clock, Search, Download, Calendar, Users, ExternalLink, Copy, Plus, Tra
 import { WorkHoursImport } from './WorkHoursImport';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 import { chinaToday, formatChinaDateTime } from '@/lib/china-time';
+import { formatAttendanceLeaveLabel, isDateInLeaveRange, isLeaveRangeOverlappingMonth } from '@/lib/leave-records';
+import type { LeaveRequestRecord } from '@/types/leave-request';
 
 interface SalaryRecord {
   id: number;
@@ -181,6 +183,12 @@ interface ImportedWorkHoursEmployee {
   weekendOvertime: number;
 }
 
+interface LeaveRequestListResponse {
+  success?: boolean;
+  records?: LeaveRequestRecord[];
+  error?: string;
+}
+
 export type SalarySectionKey = 'employees' | 'salary' | 'workhours' | 'attendance';
 
 interface SalaryPageProps {
@@ -231,6 +239,7 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [editFormData, setEditFormData] = useState({ name: '', phone: '', id_card: '', department: '', location: 'workshop' as string, status: '在职', hire_date: '' });
   const [monthlyRecords, setMonthlyRecords] = useState<MonthlyRecord[]>([]);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequestRecord[]>([]);
   const [editingSalaryRecord, setEditingSalaryRecord] = useState<MonthlyRecord | null>(null);
   const [showAddSalaryDialog, setShowAddSalaryDialog] = useState(false);
   const [newSalaryData, setNewSalaryData] = useState({
@@ -399,6 +408,107 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
 
     return { normalHours, overtimeHours };
   };
+
+  const findEmployeeForLeave = (leave: LeaveRequestRecord) => {
+    if (leave.employeeId) {
+      const byId = employees.find(employee => employee.id === leave.employeeId);
+      if (byId) return byId;
+    }
+    if (leave.idCard) {
+      const byIdCard = employees.find(employee => employee.id_card && employee.id_card === leave.idCard);
+      if (byIdCard) return byIdCard;
+    }
+    return employees.find(employee =>
+      employee.name === leave.employeeName
+      && (!leave.department || employee.department === leave.department)
+    ) || null;
+  };
+
+  const leaveMatchesRecord = (leave: LeaveRequestRecord, record: MonthlyRecord) => {
+    if (leave.employeeId && leave.employeeId === record.employee_id) return true;
+    if (leave.idCard && record.id_card && leave.idCard === record.id_card) return true;
+    return leave.employeeName === record.employee_name
+      && (!leave.department || !record.department || leave.department === record.department);
+  };
+
+  const getLeaveRequestsForRecordDate = (record: MonthlyRecord, date: string) => leaveRequests.filter(leave =>
+    leave.status === '已审核'
+    && isDateInLeaveRange(leave, date)
+    && leaveMatchesRecord(leave, record)
+  );
+
+  const hasLeaveForRecordInMonth = (record: MonthlyRecord, year: number, month: number) => leaveRequests.some(leave => {
+    if (leave.status !== '已审核' || !isLeaveRangeOverlappingMonth(leave, year, month)) {
+      return false;
+    }
+    return leaveMatchesRecord(leave, record);
+  });
+
+  const createLeaveOnlyAttendanceRow = (leave: LeaveRequestRecord, year: number, month: number): MonthlyRecord => {
+    const employee = findEmployeeForLeave(leave);
+    const location = normalizeLocation(employee?.location || (leave.department.includes('车间') ? 'workshop' : 'office'));
+    return {
+      id: -leave.id,
+      employee_id: leave.employeeId || employee?.id || -leave.id,
+      employee_name: leave.employeeName,
+      year,
+      month: String(month).padStart(2, '0'),
+      month_num: month,
+      total_days: new Date(year, month, 0).getDate(),
+      department: leave.department || employee?.department || '',
+      location,
+      normal_hours: 0,
+      weekday_overtime: 0,
+      weekend_overtime: 0,
+      base_salary: 0,
+      normal_pay: 0,
+      weekday_overtime_pay: 0,
+      weekend_overtime_pay: 0,
+      total_payable: 0,
+      deduction: 0,
+      actual_amount: 0,
+      id_card: leave.idCard || employee?.id_card || '',
+      created_at: leave.createdAt,
+      details: '{}',
+    };
+  };
+
+  const getAttendanceRows = (year: number, month: number, location: 'office' | 'workshop') => {
+    const baseRows = monthlyRecords.filter(record => {
+      if (record.year !== year || record.month_num !== month) return false;
+      if (!matchesRecordLocation(record, location)) return false;
+      return hasAttendancePunchDetails(record) || hasLeaveForRecordInMonth(record, year, month);
+    });
+
+    const matchedLeaveIds = new Set<number>();
+    baseRows.forEach(record => {
+      leaveRequests.forEach(leave => {
+        if (leave.status === '已审核' && isLeaveRangeOverlappingMonth(leave, year, month) && leaveMatchesRecord(leave, record)) {
+          matchedLeaveIds.add(leave.id);
+        }
+      });
+    });
+
+    const seenLeaveOnlyEmployees = new Set<string>();
+    const leaveOnlyRows = leaveRequests
+      .filter(leave => leave.status === '已审核' && isLeaveRangeOverlappingMonth(leave, year, month) && !matchedLeaveIds.has(leave.id))
+      .map(leave => ({ leave, employee: findEmployeeForLeave(leave) }))
+      .filter(({ leave, employee }) => {
+        const leaveLocation = normalizeLocation(employee?.location || (leave.department.includes('车间') ? 'workshop' : 'office'));
+        if (leaveLocation !== location) return false;
+        const key = leave.employeeId
+          ? `id:${leave.employeeId}`
+          : leave.idCard
+            ? `card:${leave.idCard}`
+            : `name:${leave.employeeName}:${leave.department}`;
+        if (seenLeaveOnlyEmployees.has(key)) return false;
+        seenLeaveOnlyEmployees.add(key);
+        return true;
+      })
+      .map(({ leave }) => createLeaveOnlyAttendanceRow(leave, year, month));
+
+    return [...baseRows, ...leaveOnlyRows];
+  };
   
   // 计算员工工时明细
   const calculateEmployeeWorkHours = (employeeId: number, year: number, month: number) => {
@@ -564,9 +674,22 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
     }
   };
 
+  const fetchLeaveRequests = async () => {
+    try {
+      const response = await fetch('/api/leave-requests?approved=1', { cache: 'no-store' });
+      const data = await response.json().catch(() => ({})) as LeaveRequestListResponse;
+      if (response.ok && data.success) {
+        setLeaveRequests(data.records || []);
+      }
+    } catch (error) {
+      console.error('获取请假申请失败:', error);
+    }
+  };
+
   useEffect(() => {
     fetchEmployees();
     fetchMonthlyRecords();
+    fetchLeaveRequests();
   }, []);
 
   // 自动刷新 - 每10秒更新一次工资工时数据
@@ -576,6 +699,7 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
     onRefresh: () => {
       fetchEmployees();
       fetchMonthlyRecords();
+      fetchLeaveRequests();
     },
   });
 
@@ -2134,12 +2258,8 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
                 const daysInMonth = new Date(year, month, 0).getDate();
                 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
                 
-                // 筛选当月记录和位置（兼容中英文位置值）
-                const monthRecords = monthlyRecords
-                  .filter(r => {
-                    if (r.year !== year || r.month_num !== month) return false;
-                    return matchesRecordLocation(r, attendanceLocation) && hasAttendancePunchDetails(r);
-                  });
+                // 筛选当月记录和位置（兼容中英文位置值），并合并已审核请假
+                const monthRecords = getAttendanceRows(year, month, attendanceLocation);
                 
                 if (monthRecords.length === 0) {
                   // 找出有数据的月份
@@ -2180,7 +2300,7 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
                       </thead>
                       <tbody>
                         {monthRecords.map((record) => {
-                          const details = record.details ? JSON.parse(record.details) : {};
+                          const details = parseAttendanceDetails(record);
                           return (
                             <tr key={record.id}>
                               <td className="border border-gray-300 p-2 bg-yellow-100 font-medium text-center">
@@ -2192,6 +2312,8 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
                               {Array.from({ length: daysInMonth }, (_, i) => {
                                 const day = i + 1;
                                 const dayRecord = details[day];
+                                const dateText = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                                const dayLeaves = getLeaveRequestsForRecordDate(record, dateText);
                                 let content = '';
                                 let times: string[] = [];
                                 if (typeof dayRecord === 'string') {
@@ -2207,20 +2329,23 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
                                     }
                                   }
                                   content = pairs.join('\n');
-                                } else if (dayRecord?.times) {
-                                  times = dayRecord.times;
-                                  content = dayRecord.times.join(' ');
+                                } else if (dayRecord && typeof dayRecord === 'object' && Array.isArray((dayRecord as { times?: unknown }).times)) {
+                                  times = (dayRecord as { times: unknown[] }).times.map(time => String(time)).filter(time => time.trim());
+                                  content = times.join(' ');
                                 }
+                                const leaveText = [...new Set(dayLeaves.map(leave => formatAttendanceLeaveLabel(leave.duration)))].join('\n');
+                                const displayContent = [content, leaveText].filter(Boolean).join('\n');
                                 // 检查是否有带备注的时间
                                 const hasNote = times.some(t => t.includes('（'));
+                                const hasLeave = dayLeaves.length > 0;
                                 return (
                                   <td 
                                     key={day} 
-                                    className={`border border-gray-300 p-1 text-center whitespace-pre-line text-xs cursor-pointer hover:bg-blue-50 transition-colors ${hasNote ? 'text-blue-600' : ''}`}
+                                    className={`border border-gray-300 p-1 text-center whitespace-pre-line text-xs cursor-pointer hover:bg-blue-50 transition-colors ${hasNote ? 'text-blue-600' : ''} ${hasLeave ? 'bg-rose-50 font-medium text-rose-600' : ''}`}
                                     onClick={() => openAttendanceEdit(record.employee_id, record.employee_name, year, month, day, times)}
-                                    title="点击编辑打卡记录"
+                                    title={hasLeave ? '已审核请假记录' : '点击编辑打卡记录'}
                                   >
-                                    {content}
+                                    {displayContent}
                                   </td>
                                 );
                               })}
@@ -2239,32 +2364,27 @@ export default function SalaryPage({ section = 'salary' }: SalaryPageProps) {
                 <div className="grid grid-cols-4 gap-4 text-center">
                   <div>
                     <div className="text-2xl font-bold text-blue-600">
-                      {monthlyRecords
-                        .filter(r => r.year === parseInt(searchYear) && r.month_num === parseInt(searchMonth) && matchesRecordLocation(r, attendanceLocation) && hasAttendancePunchDetails(r))
-                        .length}
+                      {getAttendanceRows(parseInt(searchYear), parseInt(searchMonth), attendanceLocation).length}
                     </div>
                     <div className="text-sm text-muted-foreground">员工数</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-orange-600">
-                      {monthlyRecords
-                        .filter(r => r.year === parseInt(searchYear) && r.month_num === parseInt(searchMonth) && matchesRecordLocation(r, attendanceLocation) && hasAttendancePunchDetails(r))
+                      {getAttendanceRows(parseInt(searchYear), parseInt(searchMonth), attendanceLocation)
                         .reduce((sum, r) => sum + calculateAttendanceRecordSummary(r).normalHours, 0).toFixed(1)}小时
                     </div>
                     <div className="text-sm text-muted-foreground">正班工时</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-green-600">
-                      {monthlyRecords
-                        .filter(r => r.year === parseInt(searchYear) && r.month_num === parseInt(searchMonth) && matchesRecordLocation(r, attendanceLocation) && hasAttendancePunchDetails(r))
+                      {getAttendanceRows(parseInt(searchYear), parseInt(searchMonth), attendanceLocation)
                         .reduce((sum, r) => sum + calculateAttendanceRecordSummary(r).overtimeHours, 0).toFixed(1)}小时
                     </div>
                     <div className="text-sm text-muted-foreground">加班工时</div>
                   </div>
                   <div>
                     <div className="text-2xl font-bold text-purple-600">
-                      {monthlyRecords
-                        .filter(r => r.year === parseInt(searchYear) && r.month_num === parseInt(searchMonth) && matchesRecordLocation(r, attendanceLocation) && hasAttendancePunchDetails(r))
+                      {getAttendanceRows(parseInt(searchYear), parseInt(searchMonth), attendanceLocation)
                         .filter(r => r.signature).length}人
                     </div>
                     <div className="text-sm text-muted-foreground">已签字</div>

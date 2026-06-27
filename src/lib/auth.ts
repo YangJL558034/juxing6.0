@@ -16,16 +16,37 @@ export interface User {
   department?: string;
 }
 
+interface AuthUserRow {
+  id: number;
+  username: string;
+  password?: string;
+  name: string;
+  avatar?: string | null;
+  role: string;
+  department?: string | null;
+}
+
+function toAuthUser(user: AuthUserRow): User {
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    avatar: user.avatar || undefined,
+    role: user.role,
+    department: user.department || undefined,
+  };
+}
+
 // 验证用户登录
 export async function login(username: string, password: string): Promise<{ success: boolean; user?: User; error?: string }> {
   try {
-    const user = query.findUserByUsername.get(username) as any;
+    const user = query.findUserByUsername.get(username) as AuthUserRow | undefined;
     
     if (!user) {
       return { success: false, error: '用户名不存在' };
     }
     
-    const isValid = bcrypt.compareSync(password, user.password);
+    const isValid = user.password ? bcrypt.compareSync(password, user.password) : false;
     
     if (!isValid) {
       return { success: false, error: '密码错误' };
@@ -33,14 +54,7 @@ export async function login(username: string, password: string): Promise<{ succe
     
     return {
       success: true,
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        avatar: user.avatar,
-        role: user.role,
-        department: user.department,
-      },
+      user: toAuthUser(user),
     };
   } catch (error) {
     console.error('Login error:', error);
@@ -103,7 +117,11 @@ export function getTokenFromHeader(cookieHeader: string | null): string | null {
 export async function getCurrentUser(cookieHeader: string | null): Promise<User | null> {
   const token = getTokenFromHeader(cookieHeader);
   if (!token) return null;
-  return await verifyToken(token);
+  const tokenUser = await verifyToken(token);
+  if (!tokenUser) return null;
+
+  const freshUser = query.findUserById.get(tokenUser.id) as AuthUserRow | undefined;
+  return freshUser ? toAuthUser(freshUser) : tokenUser;
 }
 
 // 用户注册

@@ -9,9 +9,11 @@ import {
   CheckSquare,
   Clock,
   Folder,
+  Info,
   Loader2,
   RefreshCcw,
   Sparkles,
+  Trophy,
   Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -33,6 +35,7 @@ interface StatsPayload {
     assetsByType?: Array<{ type: string; count: number }>;
     tasksByStatus?: Array<{ status: string; count: number }>;
     departments?: Array<{ id: number; name: string; status: string }>;
+    leaderboardData?: Array<{ rank: number; name: string; amount: number; target: number; rate: number }>;
   };
 }
 
@@ -43,7 +46,7 @@ const quickCards = [
   { key: 'assets', label: '资产管理', desc: '资产和二维码', icon: Folder, tone: 'bg-violet-50 text-violet-600' },
 ];
 
-export default function MobileDashboardPage({ onNavigate }: { onNavigate?: (key: string) => void }) {
+export default function MobileDashboardPage({ onNavigate, fullAccess = true }: { onNavigate?: (key: string) => void; fullAccess?: boolean }) {
   const [stats, setStats] = useState<StatsPayload['data'] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -75,6 +78,100 @@ export default function MobileDashboardPage({ onNavigate }: { onNavigate?: (key:
     { label: '待办', value: stats?.stats?.todos ?? 0, icon: CheckSquare, tone: 'bg-orange-50 text-orange-600' },
     { label: '资产', value: stats?.stats?.assets ?? 0, icon: Folder, tone: 'bg-violet-50 text-violet-600' },
   ], [stats]);
+
+  const leaderboardData = stats?.leaderboardData || [];
+  const maxLeaderboardAmount = Math.max(...leaderboardData.map((item) => item.amount), 1);
+
+  if (!fullAccess) {
+    return (
+      <div className="space-y-4">
+        <section className="mobile-ios-glass rounded-[30px] p-5 text-slate-950">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/[0.58] px-2.5 py-1 text-xs font-medium text-blue-700 backdrop-blur-xl">
+                <Sparkles className="h-3.5 w-3.5" />
+                首页
+              </div>
+              <h1 className="mt-4 text-2xl font-bold tracking-normal">聚星数据平台</h1>
+              <p className="mt-2 max-w-xs text-sm leading-6 text-slate-600">查看销售排行榜和系统介绍。</p>
+            </div>
+            <Button
+              type="button"
+              size="icon"
+              variant="secondary"
+              className="h-11 w-11 shrink-0 rounded-2xl border border-white/70 bg-white/[0.58] text-blue-700 shadow-sm backdrop-blur-xl hover:bg-white/75"
+              onClick={() => void loadStats()}
+              disabled={loading}
+            >
+              <RefreshCcw className={cn('h-5 w-5', loading && 'animate-spin')} />
+            </Button>
+          </div>
+        </section>
+
+        <section className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+              <Trophy className="h-5 w-5 text-amber-500" />
+              销售排行榜
+            </h2>
+            {loading && <Loader2 className="h-4 w-4 animate-spin text-blue-600" />}
+          </div>
+          <div className="space-y-3">
+            {leaderboardData.map((item) => (
+              <div key={item.rank} className="rounded-2xl bg-slate-50 p-3">
+                <div className="mb-2 flex items-center gap-3">
+                  <span
+                    className={cn(
+                      'flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold',
+                      item.rank === 1 && 'bg-yellow-400 text-yellow-950',
+                      item.rank === 2 && 'bg-slate-300 text-slate-800',
+                      item.rank === 3 && 'bg-amber-600 text-white',
+                      item.rank > 3 && 'bg-white text-slate-600 ring-1 ring-slate-200',
+                    )}
+                  >
+                    {item.rank}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-slate-950">{item.name}</div>
+                    <div className="text-xs text-slate-500">完成率 {item.rate}%</div>
+                  </div>
+                  <div className="text-sm font-bold text-slate-950">¥{item.amount.toLocaleString()}</div>
+                </div>
+                <div className="h-2 rounded-full bg-white">
+                  <div
+                    className="h-2 rounded-full bg-blue-600"
+                    style={{ width: `${Math.max(8, Math.round((item.amount / maxLeaderboardAmount) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+            {!loading && leaderboardData.length === 0 && (
+              <div className="rounded-2xl bg-slate-50 px-3 py-8 text-center text-sm text-slate-500">暂无销售排行数据</div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-[26px] border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <Info className="h-5 w-5 text-blue-600" />
+            软件介绍
+          </h2>
+          <div className="mt-4 space-y-3">
+            {[
+              { title: '客户业务', text: '客户、线索、合同、发票和回访统一管理。' },
+              { title: '人事行政', text: '入职、请假、住宿、社保和行政记录集中处理。' },
+              { title: '工资资产', text: '工资表、打卡记录、签字确认和资产分类移动查询。' },
+            ].map((item) => (
+              <div key={item.title} className="rounded-2xl bg-slate-50 p-3">
+                <div className="font-semibold text-slate-950">{item.title}</div>
+                <p className="mt-1 text-sm leading-6 text-slate-600">{item.text}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

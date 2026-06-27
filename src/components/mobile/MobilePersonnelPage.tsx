@@ -7,6 +7,7 @@ import {
   Download,
   Eye,
   FileCheck2,
+  FilePenLine,
   Hourglass,
   Loader2,
   Pencil,
@@ -77,6 +78,7 @@ const statusTabs: Array<{ value: OnboardingStatus; label: string; countKey: keyo
 const sourceOptions = ['网络', '人才市场', '内部推荐', '其他'];
 
 const quickActions = [
+  { label: '请假申请', key: 'leaveRequest', icon: FilePenLine, public: true },
   { label: '员工入职', key: 'onboarding', icon: Plus },
   { label: '转正申请', key: 'regularization', icon: FileCheck2 },
   { label: '工作证明', key: 'workCertificate', icon: FileCheck2 },
@@ -139,7 +141,7 @@ function DetailRow({ label, value }: { label: string; value?: string | number | 
   );
 }
 
-export default function MobilePersonnelPage() {
+export default function MobilePersonnelPage({ canManage = false }: { canManage?: boolean }) {
   const [activeStatus, setActiveStatus] = useState<OnboardingStatus>('待审核');
   const [query, setQuery] = useState('');
   const [keyword, setKeyword] = useState('');
@@ -165,7 +167,19 @@ export default function MobilePersonnelPage() {
   const [editData, setEditData] = useState<OnboardingFormData | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
+  const openLeaveRequest = () => {
+    window.open('/leave-request', '_blank', 'noopener,noreferrer');
+  };
+
   const loadRecords = useCallback(async () => {
+    if (!canManage) {
+      setRecords([]);
+      setCounts(emptyCounts);
+      setLoading(false);
+      setError('');
+      return;
+    }
+
     setLoading(true);
     setError('');
 
@@ -190,7 +204,7 @@ export default function MobilePersonnelPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeStatus, keyword, source]);
+  }, [activeStatus, canManage, keyword, source]);
 
   useEffect(() => {
     void loadRecords();
@@ -370,36 +384,59 @@ export default function MobilePersonnelPage() {
           <div>
             <p className="text-xs font-semibold text-blue-600">组织人事</p>
             <h1 className="mt-1 text-2xl font-bold tracking-normal">人事管理</h1>
-            <p className="mt-2 text-sm text-slate-600">移动端办理、审核、查看和打印同后台数据同步。</p>
+            <p className="mt-2 text-sm text-slate-600">
+              {canManage ? '移动端办理、审核、查看和打印同后台数据同步。' : '移动端可提交请假申请，提交后由人事后台审核。'}
+            </p>
           </div>
-          <Button
-            type="button"
-            size="icon"
-            variant="secondary"
-            className="h-11 w-11 shrink-0 rounded-2xl border border-white/70 bg-white/[0.58] text-blue-700 shadow-sm backdrop-blur-xl hover:bg-white/75"
-            onClick={() => void loadRecords()}
-            disabled={loading}
-          >
-            <RefreshCcw className={cn('h-5 w-5', loading && 'animate-spin')} />
-          </Button>
+          {canManage && (
+            <Button
+              type="button"
+              size="icon"
+              variant="secondary"
+              className="h-11 w-11 shrink-0 rounded-2xl border border-white/70 bg-white/[0.58] text-blue-700 shadow-sm backdrop-blur-xl hover:bg-white/75"
+              onClick={() => void loadRecords()}
+              disabled={loading}
+            >
+              <RefreshCcw className={cn('h-5 w-5', loading && 'animate-spin')} />
+            </Button>
+          )}
         </div>
 
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <div className="mobile-ios-tile rounded-2xl p-3">
-            <div className="text-2xl font-bold">{counts.total}</div>
-            <div className="mt-1 text-xs text-slate-500">全部登记</div>
+        {canManage ? (
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="mobile-ios-tile rounded-2xl p-3">
+              <div className="text-2xl font-bold">{counts.total}</div>
+              <div className="mt-1 text-xs text-slate-500">全部登记</div>
+            </div>
+            <div className="mobile-ios-tile rounded-2xl p-3">
+              <div className="text-2xl font-bold">{counts.pending}</div>
+              <div className="mt-1 text-xs text-slate-500">待审核</div>
+            </div>
+            <div className="mobile-ios-tile rounded-2xl p-3">
+              <div className="text-2xl font-bold">{reviewedTotal}</div>
+              <div className="mt-1 text-xs text-slate-500">已处理</div>
+            </div>
           </div>
-          <div className="mobile-ios-tile rounded-2xl p-3">
-            <div className="text-2xl font-bold">{counts.pending}</div>
-            <div className="mt-1 text-xs text-slate-500">待审核</div>
+        ) : (
+          <div className="mt-4 rounded-3xl border border-white/70 bg-white/[0.7] p-4 shadow-sm backdrop-blur-xl">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white">
+                <FilePenLine className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-base font-semibold text-slate-950">请假申请</div>
+                <p className="mt-1 text-sm leading-5 text-slate-600">所有员工都可以提交，请填写姓名和身份证并完成签字。</p>
+              </div>
+            </div>
+            <Button className="mt-4 h-12 w-full rounded-2xl bg-blue-600 text-base" onClick={openLeaveRequest}>
+              <FilePenLine className="mr-2 h-5 w-5" />
+              请假申请
+            </Button>
           </div>
-          <div className="mobile-ios-tile rounded-2xl p-3">
-            <div className="text-2xl font-bold">{reviewedTotal}</div>
-            <div className="mt-1 text-xs text-slate-500">已处理</div>
-          </div>
-        </div>
+        )}
       </section>
 
+      {canManage && (
       <section className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1">
@@ -430,7 +467,9 @@ export default function MobilePersonnelPage() {
           </Button>
         </div>
       </section>
+      )}
 
+      {canManage && (
       <section className="grid grid-cols-3 gap-2">
         {statusTabs.map((tab) => {
           const active = activeStatus === tab.value;
@@ -456,13 +495,15 @@ export default function MobilePersonnelPage() {
           );
         })}
       </section>
+      )}
 
-      {error && (
+      {canManage && error && (
         <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
+      {canManage && (
       <section className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-base font-semibold text-slate-950">{activeStatus}列表</h2>
@@ -541,6 +582,7 @@ export default function MobilePersonnelPage() {
           </article>
         ))}
       </section>
+      )}
 
       <Sheet open={actionsOpen} onOpenChange={setActionsOpen}>
         <SheetContent side="bottom" className="max-h-[80dvh] rounded-t-[26px] p-0">
@@ -557,6 +599,10 @@ export default function MobilePersonnelPage() {
                   type="button"
                   onClick={() => {
                     setActionsOpen(false);
+                    if (action.key === 'leaveRequest') {
+                      openLeaveRequest();
+                      return;
+                    }
                     if (action.key === 'onboarding') return;
                     setAdminModule(action.key);
                   }}

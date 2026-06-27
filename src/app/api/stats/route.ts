@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database';
+import { verifyToken } from '@/lib/auth';
+import { hasPermission } from '@/lib/permission-check';
 
 export async function GET(request: NextRequest) {
   try {
+    const token = request.cookies.get('auth_token')?.value;
+    const user = token ? await verifyToken(token) : null;
+    if (!user) {
+      return NextResponse.json({ success: false, error: '未登录' }, { status: 401 });
+    }
+    const canViewFullDashboard = hasPermission(user, 'dashboard');
+
     // 获取各种统计数据
     const customersCount = db.prepare('SELECT COUNT(*) as count FROM customers').get() as { count: number };
     const leadsCount = db.prepare('SELECT COUNT(*) as count FROM leads').get() as { count: number };
@@ -113,6 +122,16 @@ export async function GET(request: NextRequest) {
       { rank: 4, name: '赵六', amount: 62300, target: 80000, rate: 78 },
       { rank: 5, name: '孙七', amount: 45800, target: 60000, rate: 76 },
     ];
+
+    if (!canViewFullDashboard) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          limited: true,
+          leaderboardData,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,

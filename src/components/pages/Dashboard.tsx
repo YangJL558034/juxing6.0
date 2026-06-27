@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
+import { Info, RefreshCw, Sparkles, TrendingDown, TrendingUp, Trophy } from 'lucide-react';
 import {
   AreaChart,
   Area,
@@ -43,6 +43,7 @@ interface SummaryCard {
 }
 
 interface Stats {
+  limited?: boolean;
   metricCards: MetricCard[][];
   summaryCards: SummaryCard[];
   contractChartData: { name: string; 金额: number; 当月目标金额: number }[];
@@ -51,7 +52,96 @@ interface Stats {
   leaderboardData: { rank: number; name: string; amount: number; target: number; rate: number }[];
 }
 
-export function Dashboard() {
+function SoftwareIntroCard() {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-base font-medium">
+          <Info className="h-4 w-4 text-blue-600" />
+          软件介绍
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4 md:grid-cols-3">
+        {[
+          { title: '客户与业务', text: '集中管理客户、线索、合同、发票、回访和任务，减少重复录入。' },
+          { title: '组织与流程', text: '覆盖人事、行政、审批、通知和权限分配，让后台管理更清晰。' },
+          { title: '工资与资产', text: '支持工资工时查询、打卡记录、员工签字确认和资产分类管理。' },
+        ].map((item) => (
+          <div key={item.title} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="font-semibold text-slate-900">{item.title}</div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{item.text}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SalesLeaderboardView({ stats }: { stats: Stats }) {
+  const maxAmount = Math.max(...stats.leaderboardData.map((item) => item.amount), 1);
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base font-medium">
+            <Trophy className="h-4 w-4 text-amber-500" />
+            销售排行榜可视化
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stats.leaderboardData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="#94A3B8" />
+                <YAxis tick={{ fontSize: 12 }} stroke="#94A3B8" />
+                <Tooltip
+                  formatter={(value) => [`¥${Number(value).toLocaleString()}`, '销售金额']}
+                  contentStyle={{
+                    backgroundColor: '#fff',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                  }}
+                />
+                <Bar dataKey="amount" fill="#2563EB" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-5 space-y-3">
+            {stats.leaderboardData.map((item) => (
+              <div key={item.rank} className="flex items-center gap-4">
+                <span
+                  className={cn(
+                    'flex h-7 w-7 items-center justify-center rounded-full text-sm font-semibold',
+                    item.rank === 1 && 'bg-yellow-400 text-yellow-950',
+                    item.rank === 2 && 'bg-slate-300 text-slate-800',
+                    item.rank === 3 && 'bg-amber-600 text-white',
+                    item.rank > 3 && 'bg-slate-100 text-slate-600',
+                  )}
+                >
+                  {item.rank}
+                </span>
+                <div className="w-20 font-medium text-slate-800">{item.name}</div>
+                <div className="h-2 flex-1 rounded-full bg-slate-100">
+                  <div
+                    className="h-2 rounded-full bg-blue-600"
+                    style={{ width: `${Math.max(8, Math.round((item.amount / maxAmount) * 100))}%` }}
+                  />
+                </div>
+                <div className="w-28 text-right font-semibold text-slate-900">¥{item.amount.toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <SoftwareIntroCard />
+    </div>
+  );
+}
+
+export function Dashboard({ fullAccess = true }: { fullAccess?: boolean }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -101,6 +191,14 @@ export function Dashboard() {
         <div className="flex items-center justify-center h-64">
           <div className="text-slate-500">暂无数据</div>
         </div>
+      </div>
+    );
+  }
+
+  if (!fullAccess) {
+    return (
+      <div className="p-3 sm:p-4 lg:p-6">
+        <SalesLeaderboardView stats={stats} />
       </div>
     );
   }

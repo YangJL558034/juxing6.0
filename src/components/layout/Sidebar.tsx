@@ -36,6 +36,7 @@ import {
   User,
   Bell,
   Briefcase,
+  Calendar,
   Home,
   Mail,
 } from 'lucide-react';
@@ -89,6 +90,7 @@ const iconMap: Record<string, React.ElementType> = {
   Bot,
   Bell,
   Briefcase,
+  Calendar,
   Home,
   Mail,
 };
@@ -132,6 +134,7 @@ const modulePermissionMap: Record<string, string> = {
   'personnel-resignation': 'personnel',
   'personnel-resignation-certificate': 'personnel',
   'personnel-labor-termination': 'personnel',
+  'personnel-leave-request': 'personnel',
   'administration': 'administration',
   'administration-dormitory': 'administration',
   'administration-rooms': 'administration',
@@ -154,6 +157,7 @@ const modulePermissionMap: Record<string, string> = {
 };
 
 const hasPermission = (key: string, permissions: string[], isAdmin: boolean): boolean => {
+  if (key === 'dashboard') return true;
   if (isAdmin) return true;
   if (key === 'assets-overview' || key.startsWith('assets-type:')) return permissions.includes('assets');
   const permissionKey = modulePermissionMap[key];
@@ -480,6 +484,19 @@ export function Sidebar({
     return {
       ...item,
       children: item.children?.map((child) => {
+        if (child.key === 'administration') {
+          const children = child.children || [];
+          const hasItemsPage = children.some((navChild) => navChild.key === 'administration-items');
+          return {
+            ...child,
+            children: hasItemsPage
+              ? children
+              : [
+                ...children,
+                { key: 'administration-items', label: '物品管理', icon: 'Package' },
+              ],
+          };
+        }
         if (child.key !== 'assets') return child;
         return {
           ...child,

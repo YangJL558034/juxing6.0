@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db, query } from '@/lib/database';
+import { verifyToken } from '@/lib/auth';
+import { hasPermission } from '@/lib/permission-check';
 
 interface MonthlyRecordRow {
   [key: string]: unknown;
@@ -21,13 +23,76 @@ interface WorkHoursImportItem {
   details?: unknown;
 }
 
+async function requireUser(request: NextRequest) {
+  const token = request.cookies.get('auth_token')?.value;
+  if (!token) return null;
+  return verifyToken(token);
+}
+
+function findCurrentEmployee(user: { id: number; username: string; name: string }) {
+  return db.prepare(`
+    SELECT id, name
+    FROM employees
+    WHERE user_id = ?
+       OR name = ?
+       OR employee_id = ?
+    ORDER BY CASE WHEN user_id = ? THEN 0 WHEN name = ? THEN 1 ELSE 2 END
+    LIMIT 1
+  `).get(user.id, user.name, user.username, user.id, user.name) as { id: number; name: string } | undefined;
+}
+
+function getEmployeeMonthlyRecords(employee: { id: number; name: string }, year?: string | null, month?: string | null) {
+  const where = [
+    'w.year BETWEEN 2000 AND 2100',
+    'w.month_num BETWEEN 1 AND 12',
+    `(
+      w.employee_id = ?
+      OR (
+        w.employee_name = ?
+        AND NOT EXISTS (
+          SELECT 1 FROM employees linked_employee WHERE linked_employee.id = w.employee_id
+        )
+      )
+    )`,
+  ];
+  const params: unknown[] = [employee.id, employee.name];
+
+  if (year) {
+    where.push('w.year = ?');
+    params.push(parseInt(year, 10));
+  }
+  if (month) {
+    where.push('w.month_num = ?');
+    params.push(parseInt(month, 10));
+  }
+
+  return db.prepare(`
+    SELECT w.*, ? as employee_id, COALESCE(NULLIF(w.employee_name, ''), ?) as employee_name
+    FROM work_hours_monthly w
+    WHERE ${where.join(' AND ')}
+    ORDER BY w.year DESC, w.month_num DESC, w.id DESC
+  `).all(employee.id, employee.name, ...params);
+}
+
 // 获取工时月份汇总
 export async function GET(request: NextRequest) {
   try {
+    const user = await requireUser(request);
+    if (!user) {
+      return NextResponse.json({ success: false, error: '未登录' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const month = searchParams.get('month');
     const year = searchParams.get('year');
     const employeeId = searchParams.get('employeeId');
+    const canManageSalary = hasPermission(user, 'salary');
+
+    if (!canManageSalary) {
+      const employee = findCurrentEmployee(user);
+      const records = employee ? getEmployeeMonthlyRecords(employee, year, month) : [];
+      return NextResponse.json({ success: true, data: records, selfOnly: true });
+    }
     
     let records;
     if (employeeId) {
@@ -71,6 +136,14 @@ export async function GET(request: NextRequest) {
 // 导入工时数据或创建工资记录
 export async function POST(request: NextRequest) {
   try {
+    const user = await requireUser(request);
+    if (!user) {
+      return NextResponse.json({ success: false, error: '未登录' }, { status: 401 });
+    }
+    if (!hasPermission(user, 'salary')) {
+      return NextResponse.json({ success: false, error: '无权管理工资工时' }, { status: 403 });
+    }
+
     const body = await request.json();
     
     // 检查是否是新的工资记录格式

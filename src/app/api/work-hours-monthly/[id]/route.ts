@@ -1,11 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database';
+import { verifyToken } from '@/lib/auth';
+import { hasPermission } from '@/lib/permission-check';
+
+async function requireSalaryManager(request: NextRequest) {
+  const token = request.cookies.get('auth_token')?.value;
+  if (!token) return { error: NextResponse.json({ success: false, error: '未登录' }, { status: 401 }) };
+  const user = await verifyToken(token);
+  if (!user) return { error: NextResponse.json({ success: false, error: '登录已过期' }, { status: 401 }) };
+  if (!hasPermission(user, 'salary')) {
+    return { error: NextResponse.json({ success: false, error: '无权管理工资工时' }, { status: 403 }) };
+  }
+  return { user };
+}
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSalaryManager(request);
+    if (auth.error) return auth.error;
+
     const { id } = await params;
     const body = await request.json();
     
@@ -201,6 +217,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = await requireSalaryManager(request);
+    if (auth.error) return auth.error;
+
     const { id } = await params;
     
     db.prepare('DELETE FROM work_hours_monthly WHERE id = ?').run(parseInt(id));
