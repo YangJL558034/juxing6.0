@@ -17,6 +17,7 @@ import type {
 
 interface MobileItemClaimsProps {
   canManage: boolean;
+  standaloneRequest?: boolean;
 }
 
 interface MutateItemResponse {
@@ -61,7 +62,7 @@ function statusClass(status: string) {
   return 'bg-orange-50 text-orange-700';
 }
 
-export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
+export default function MobileItemClaims({ canManage, standaloneRequest = false }: MobileItemClaimsProps) {
   const [items, setItems] = useState<ItemInventoryRecord[]>([]);
   const [claims, setClaims] = useState<ItemClaimRecord[]>([]);
   const [summary, setSummary] = useState<ItemInventorySummary>(emptySummary);
@@ -73,6 +74,7 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
   const [claimOpen, setClaimOpen] = useState(false);
   const [error, setError] = useState('');
   const [stockForm, setStockForm] = useState(emptyStockForm);
+  const [applicantName, setApplicantName] = useState('');
   const [claimForm, setClaimForm] = useState({
     itemId: '',
     quantity: '1',
@@ -83,22 +85,25 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
     setLoading(true);
     setError('');
     try {
-      const [itemsResponse, claimsResponse] = await Promise.all([
-        fetch('/api/item-inventory', { cache: 'no-store', credentials: 'include' }),
-        fetch('/api/item-claims', { cache: 'no-store', credentials: 'include' }),
-      ]);
+      const itemsResponse = await fetch('/api/item-inventory', { cache: 'no-store', credentials: 'include' });
       const itemsData = await itemsResponse.json().catch(() => ({})) as ItemInventoryListResponse;
-      const claimsData = await claimsResponse.json().catch(() => ({})) as ItemClaimListResponse;
       if (!itemsResponse.ok || !itemsData.success) {
         throw new Error(itemsData.error || '获取物品库失败');
       }
-      if (!claimsResponse.ok || !claimsData.success) {
-        throw new Error(claimsData.error || '获取领用记录失败');
+
+      let nextClaims: ItemClaimRecord[] = [];
+      if (!standaloneRequest) {
+        const claimsResponse = await fetch('/api/item-claims', { cache: 'no-store', credentials: 'include' });
+        const claimsData = await claimsResponse.json().catch(() => ({})) as ItemClaimListResponse;
+        if (!claimsResponse.ok || !claimsData.success) {
+          throw new Error(claimsData.error || '获取领用记录失败');
+        }
+        nextClaims = claimsData.claims || [];
       }
 
       const nextItems = itemsData.items || [];
       setItems(nextItems);
-      setClaims(claimsData.claims || []);
+      setClaims(nextClaims);
       setSummary(itemsData.summary || emptySummary);
       setClaimForm((current) => ({
         ...current,
@@ -112,7 +117,7 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [standaloneRequest]);
 
   useEffect(() => {
     void loadData();
@@ -122,6 +127,9 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
     return items.find((item) => String(item.id) === claimForm.itemId) || null;
   }, [claimForm.itemId, items]);
 
+  const showStockControls = canManage && !standaloneRequest;
+  const showClaimControls = !standaloneRequest;
+  const claimFormOpen = standaloneRequest || claimOpen;
   const pendingClaims = useMemo(() => claims.filter((claim) => claim.status === '待审核'), [claims]);
 
   const submitStock = async () => {
@@ -164,6 +172,10 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
   };
 
   const submitClaim = async () => {
+    if (standaloneRequest && !applicantName.trim()) {
+      alert('请填写申请人名称');
+      return;
+    }
     if (!claimForm.itemId) {
       alert('请选择领用物品');
       return;
@@ -180,6 +192,7 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          applicantName: standaloneRequest ? applicantName.trim() : undefined,
           itemId: claimForm.itemId,
           quantity: claimForm.quantity,
           reason: claimForm.reason,
@@ -191,6 +204,9 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
       }
       setClaimForm((current) => ({ ...current, quantity: '1', reason: '' }));
       setClaimOpen(false);
+      if (standaloneRequest) {
+        alert(result.message || '物品领用申请已提交，等待后台审核');
+      }
       await loadData();
     } catch (submitError) {
       alert(submitError instanceof Error ? submitError.message : '提交领用申请失败');
@@ -226,7 +242,7 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-semibold text-blue-600">行政管理</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-normal">{canManage ? '物品入口' : '物品领用申请'}</h1>
+            <h1 className="mt-1 text-2xl font-bold tracking-normal">{canManage && !standaloneRequest ? '物品管理' : '物品领用申请'}</h1>
             <p className="mt-2 text-sm text-slate-600">
               {canManage ? '查看物品剩余、领用数量和待审核申请。' : '选择物品并提交领用申请。'}
             </p>
@@ -242,7 +258,7 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
           </Button>
         </div>
 
-        {canManage && (
+        {showStockControls && (
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="mobile-ios-tile rounded-2xl p-3">
               <div className="text-xl font-bold">{summary.remainingQuantity}</div>
@@ -261,8 +277,9 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
       </section>
 
       <section className="rounded-[24px] border border-slate-200 bg-white p-3 shadow-sm">
-        <div className={cn('grid gap-2', canManage ? 'grid-cols-2' : 'grid-cols-1')}>
-          {canManage && (
+        {showClaimControls && (
+        <div className={cn('grid gap-2', showStockControls ? 'grid-cols-2' : 'grid-cols-1')}>
+          {showStockControls && (
             <Button
               variant="outline"
               className="h-12 rounded-2xl text-base font-semibold"
@@ -286,8 +303,9 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
             物品领用申请
           </Button>
         </div>
+        )}
 
-        {canManage && stockOpen && (
+        {showStockControls && stockOpen && (
           <div className="mt-3 space-y-3 rounded-2xl bg-slate-50 p-3">
             <Input
               className="h-12 rounded-2xl bg-white"
@@ -341,8 +359,16 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
           </div>
         )}
 
-        {claimOpen && (
+        {claimFormOpen && (
           <div className="mt-3 space-y-3 rounded-2xl bg-slate-50 p-3">
+            {standaloneRequest && (
+              <Input
+                className="h-12 rounded-2xl bg-white"
+                value={applicantName}
+                onChange={(event) => setApplicantName(event.target.value)}
+                placeholder="申请人名称"
+              />
+            )}
             <Select value={claimForm.itemId} onValueChange={(value) => setClaimForm((current) => ({ ...current, itemId: value }))}>
               <SelectTrigger className="h-12 rounded-2xl bg-white">
                 <SelectValue placeholder="选择物品" />
@@ -424,6 +450,7 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
         </section>
       )}
 
+      {!standaloneRequest && (
       <section className="space-y-3">
         <div className="flex items-center justify-between px-1">
           <h2 className="text-base font-semibold text-slate-950">{canManage ? '领用审核' : '我的领用'}</h2>
@@ -460,6 +487,7 @@ export default function MobileItemClaims({ canManage }: MobileItemClaimsProps) {
           </article>
         ))}
       </section>
+      )}
     </div>
   );
 }

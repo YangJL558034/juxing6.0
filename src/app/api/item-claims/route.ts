@@ -29,6 +29,8 @@ interface ItemClaimRow {
 }
 
 interface CreateClaimBody {
+  applicantName?: unknown;
+  department?: unknown;
   itemId?: unknown;
   quantity?: unknown;
   reason?: unknown;
@@ -101,15 +103,17 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request);
-    if (!user) {
-      return NextResponse.json({ success: false, error: '未登录' }, { status: 401 });
-    }
 
     const body = await request.json().catch(() => ({})) as CreateClaimBody;
+    const applicantName = user?.name || asText(body.applicantName);
+    const department = user?.department || asText(body.department);
     const itemId = Number(body.itemId);
     const quantity = Math.floor(Number(body.quantity || 0));
     const reason = asText(body.reason);
 
+    if (!applicantName) {
+      return NextResponse.json({ success: false, error: '请填写申请人名称' }, { status: 400 });
+    }
     if (!Number.isInteger(itemId) || itemId <= 0) {
       return NextResponse.json({ success: false, error: '请选择领用物品' }, { status: 400 });
     }
@@ -135,9 +139,9 @@ export async function POST(request: NextRequest) {
     `).run(
       item.id,
       item.name,
-      user.id,
-      user.name,
-      user.department || '',
+      user?.id ?? null,
+      applicantName,
+      department,
       quantity,
       reason,
     );

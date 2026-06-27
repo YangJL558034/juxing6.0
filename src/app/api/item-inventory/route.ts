@@ -84,13 +84,8 @@ async function requireUser(request: NextRequest) {
   return getCurrentUser(request.headers.get('cookie'));
 }
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const user = await requireUser(request);
-    if (!user) {
-      return NextResponse.json<ItemInventoryListResponse>({ success: false, error: '未登录' }, { status: 401 });
-    }
-
     const rows = db.prepare(`
       SELECT
         i.*,

@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ClipboardList,
   Eye,
+  ExternalLink,
   Loader2,
   PackageCheck,
   Pencil,
@@ -254,6 +255,10 @@ export default function ItemManagementPanel() {
       reason: '',
     });
     setClaimDialogOpen(true);
+  };
+
+  const openMobileClaimPage = () => {
+    window.open('/item-claim', '_blank', 'noopener,noreferrer');
   };
 
   const openViewClaim = (claim: ItemClaimRecord) => {
@@ -528,6 +533,10 @@ export default function ItemManagementPanel() {
           <Button className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700" onClick={openClaimDialog} disabled={items.length === 0}>
             <Plus className="h-4 w-4" />
             物品领用申请
+          </Button>
+          <Button variant="outline" className="mt-3 w-full" onClick={openMobileClaimPage}>
+            <ExternalLink className="h-4 w-4" />
+            打开移动端领用页
           </Button>
 
           <div className="mt-5 grid grid-cols-3 gap-2 text-center">
