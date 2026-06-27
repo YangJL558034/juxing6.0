@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BedDouble,
-  CalendarDays,
   DoorOpen,
   Droplets,
   Home,
   Loader2,
+  PackageCheck,
   Plus,
   RefreshCcw,
   Search,
@@ -75,6 +74,8 @@ const quickLinks = [
   { label: '水费登记', key: 'water', icon: Droplets },
 ] as const;
 
+type MobileAdministrationSection = 'dormitory' | 'items';
+
 function display(value?: string | number | null) {
   if (value === undefined || value === null) return '-';
   const text = String(value).trim();
@@ -117,6 +118,7 @@ export default function MobileAdministrationPage({ canManage = false }: { canMan
   const [roomDetailLoading, setRoomDetailLoading] = useState(false);
   const [roomDetailError, setRoomDetailError] = useState('');
   const [waterManagerOpen, setWaterManagerOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState<MobileAdministrationSection>('dormitory');
 
   const loadData = async () => {
     setLoading(true);
@@ -148,6 +150,7 @@ export default function MobileAdministrationPage({ canManage = false }: { canMan
 
   useEffect(() => {
     void loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStatus]);
 
   const roomStats = useMemo(() => {
@@ -187,7 +190,35 @@ export default function MobileAdministrationPage({ canManage = false }: { canMan
 
   return (
     <div className="space-y-4">
-      <MobileItemClaims canManage />
+      <section className="grid grid-cols-2 gap-2 rounded-[24px] border border-slate-200 bg-white p-2 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveSection('dormitory')}
+          className={cn(
+            'flex h-12 items-center justify-center rounded-2xl text-sm font-semibold transition active:scale-[0.98]',
+            activeSection === 'dormitory' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-50 text-slate-700',
+          )}
+        >
+          <Home className="mr-1 h-4 w-4" />
+          住房申请
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSection('items')}
+          className={cn(
+            'flex h-12 items-center justify-center rounded-2xl text-sm font-semibold transition active:scale-[0.98]',
+            activeSection === 'items' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-50 text-slate-700',
+          )}
+        >
+          <PackageCheck className="mr-1 h-4 w-4" />
+          物品管理
+        </button>
+      </section>
+
+      {activeSection === 'items' && <MobileItemClaims canManage />}
+
+      {activeSection === 'dormitory' && (
+      <>
 
       <section className="mobile-ios-glass rounded-[30px] p-5 text-slate-950">
         <div className="flex items-start justify-between gap-3">
@@ -469,6 +500,8 @@ export default function MobileAdministrationPage({ canManage = false }: { canMan
           )}
         </SheetContent>
       </Sheet>
+      </>
+      )}
     </div>
   );
 }

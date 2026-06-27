@@ -4,14 +4,25 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   ClipboardList,
+  Eye,
   Loader2,
   PackageCheck,
+  Pencil,
   Plus,
   RefreshCcw,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -55,6 +66,15 @@ const emptySummary: ItemInventorySummary = {
   totalValue: 0,
 };
 
+const emptyItemForm = {
+  name: '',
+  category: '',
+  unit: '个',
+  quantity: '',
+  unitPrice: '',
+  remark: '',
+};
+
 function display(value?: string | number | null) {
   if (value === undefined || value === null) return '-';
   const text = String(value).trim();
@@ -66,6 +86,10 @@ function formatMoney(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function isPending(status: string) {
+  return status === '待审核';
 }
 
 function statusClass(status: string) {
@@ -92,6 +116,57 @@ function StatTile({
   );
 }
 
+function ClaimFormFields({
+  items,
+  itemId,
+  quantity,
+  reason,
+  onItemChange,
+  onQuantityChange,
+  onReasonChange,
+}: {
+  items: ItemInventoryRecord[];
+  itemId: string;
+  quantity: string;
+  reason: string;
+  onItemChange: (value: string) => void;
+  onQuantityChange: (value: string) => void;
+  onReasonChange: (value: string) => void;
+}) {
+  const selectedItem = items.find((item) => String(item.id) === itemId) || null;
+
+  return (
+    <div className="space-y-3">
+      <Select value={itemId} onValueChange={onItemChange}>
+        <SelectTrigger>
+          <SelectValue placeholder="选择领用物品" />
+        </SelectTrigger>
+        <SelectContent>
+          {items.map((item) => (
+            <SelectItem key={item.id} value={String(item.id)}>
+              {item.name}（剩余 {item.remainingQuantity}{item.unit}）
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        value={quantity}
+        onChange={(event) => onQuantityChange(event.target.value)}
+        type="number"
+        min="1"
+        max={selectedItem?.remainingQuantity || undefined}
+        placeholder="领用数量"
+      />
+      <Textarea
+        value={reason}
+        onChange={(event) => onReasonChange(event.target.value)}
+        placeholder="领用原因"
+        rows={4}
+      />
+    </div>
+  );
+}
+
 export default function ItemManagementPanel() {
   const [items, setItems] = useState<ItemInventoryRecord[]>([]);
   const [claims, setClaims] = useState<ItemClaimRecord[]>([]);
@@ -99,18 +174,23 @@ export default function ItemManagementPanel() {
   const [loading, setLoading] = useState(true);
   const [savingItem, setSavingItem] = useState(false);
   const [submittingClaim, setSubmittingClaim] = useState(false);
+  const [updatingClaim, setUpdatingClaim] = useState(false);
   const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [itemDialogOpen, setItemDialogOpen] = useState(false);
+  const [claimDialogOpen, setClaimDialogOpen] = useState(false);
+  const [viewClaimOpen, setViewClaimOpen] = useState(false);
+  const [editClaimOpen, setEditClaimOpen] = useState(false);
+  const [selectedClaim, setSelectedClaim] = useState<ItemClaimRecord | null>(null);
   const [error, setError] = useState('');
 
-  const [itemForm, setItemForm] = useState({
-    name: '',
-    category: '',
-    unit: '个',
-    quantity: '',
-    unitPrice: '',
-    remark: '',
-  });
+  const [itemForm, setItemForm] = useState(emptyItemForm);
   const [claimForm, setClaimForm] = useState({
+    itemId: '',
+    quantity: '1',
+    reason: '',
+  });
+  const [editClaimForm, setEditClaimForm] = useState({
     itemId: '',
     quantity: '1',
     reason: '',
@@ -156,15 +236,44 @@ export default function ItemManagementPanel() {
     void loadData();
   }, [loadData]);
 
-  const selectedItem = useMemo(() => {
-    return items.find((item) => String(item.id) === claimForm.itemId) || null;
-  }, [claimForm.itemId, items]);
-
   const claimStats = useMemo(() => ({
     pending: claims.filter((claim) => claim.status === '待审核').length,
     approved: claims.filter((claim) => claim.status === '已审核').length,
     rejected: claims.filter((claim) => claim.status === '已驳回').length,
   }), [claims]);
+
+  const openItemDialog = () => {
+    setItemForm(emptyItemForm);
+    setItemDialogOpen(true);
+  };
+
+  const openClaimDialog = () => {
+    setClaimForm({
+      itemId: items[0] ? String(items[0].id) : '',
+      quantity: '1',
+      reason: '',
+    });
+    setClaimDialogOpen(true);
+  };
+
+  const openViewClaim = (claim: ItemClaimRecord) => {
+    setSelectedClaim(claim);
+    setViewClaimOpen(true);
+  };
+
+  const openEditClaim = (claim: ItemClaimRecord) => {
+    if (!isPending(claim.status)) {
+      alert('已审核或已驳回的领用申请不能修改');
+      return;
+    }
+    setSelectedClaim(claim);
+    setEditClaimForm({
+      itemId: String(claim.itemId),
+      quantity: String(claim.quantity),
+      reason: claim.reason,
+    });
+    setEditClaimOpen(true);
+  };
 
   const handleCreateItem = async () => {
     if (!itemForm.name.trim()) {
@@ -192,7 +301,8 @@ export default function ItemManagementPanel() {
         throw new Error(result.error || '新增物品失败');
       }
 
-      setItemForm({ name: '', category: '', unit: '个', quantity: '', unitPrice: '', remark: '' });
+      setItemForm(emptyItemForm);
+      setItemDialogOpen(false);
       await loadData();
     } catch (saveError) {
       alert(saveError instanceof Error ? saveError.message : '新增物品失败');
@@ -229,11 +339,72 @@ export default function ItemManagementPanel() {
       }
 
       setClaimForm((current) => ({ ...current, quantity: '1', reason: '' }));
+      setClaimDialogOpen(false);
       await loadData();
     } catch (submitError) {
       alert(submitError instanceof Error ? submitError.message : '提交领用申请失败');
     } finally {
       setSubmittingClaim(false);
+    }
+  };
+
+  const handleUpdateClaim = async () => {
+    if (!selectedClaim) return;
+    if (!editClaimForm.itemId) {
+      alert('请选择领用物品');
+      return;
+    }
+    if (!editClaimForm.reason.trim()) {
+      alert('请填写领用原因');
+      return;
+    }
+
+    setUpdatingClaim(true);
+    try {
+      const response = await fetch(`/api/item-claims/${selectedClaim.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          itemId: editClaimForm.itemId,
+          quantity: editClaimForm.quantity,
+          reason: editClaimForm.reason,
+        }),
+      });
+      const result = await response.json().catch(() => ({})) as MutateClaimResponse;
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '修改领用申请失败');
+      }
+
+      setEditClaimOpen(false);
+      setSelectedClaim(null);
+      await loadData();
+    } catch (updateError) {
+      alert(updateError instanceof Error ? updateError.message : '修改领用申请失败');
+    } finally {
+      setUpdatingClaim(false);
+    }
+  };
+
+  const handleDeleteClaim = async (claim: ItemClaimRecord) => {
+    if (!window.confirm(`确定删除 ${claim.applicantName} 的 ${claim.itemName} 领用申请吗？`)) return;
+
+    setDeletingId(claim.id);
+    try {
+      const response = await fetch(`/api/item-claims/${claim.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const result = await response.json().catch(() => ({})) as MutateClaimResponse;
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '删除领用申请失败');
+      }
+
+      await loadData();
+    } catch (deleteError) {
+      alert(deleteError instanceof Error ? deleteError.message : '删除领用申请失败');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -278,7 +449,7 @@ export default function ItemManagementPanel() {
         <StatTile label="库存金额" value={formatMoney(summary.totalValue)} tone="bg-slate-900" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="rounded-lg border border-slate-100 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
@@ -288,54 +459,16 @@ export default function ItemManagementPanel() {
               </h2>
               <p className="mt-1 text-sm text-slate-500">管理物品数量、单价和剩余库存，审核领用后自动扣减。</p>
             </div>
-            <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={loading}>
-              <RefreshCcw className={cn('h-4 w-4', loading && 'animate-spin')} />
-              刷新
-            </Button>
-          </div>
-
-          <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-6">
-            <Input
-              value={itemForm.name}
-              onChange={(event) => setItemForm((current) => ({ ...current, name: event.target.value }))}
-              placeholder="物品名称"
-              className="md:col-span-2"
-            />
-            <Input
-              value={itemForm.category}
-              onChange={(event) => setItemForm((current) => ({ ...current, category: event.target.value }))}
-              placeholder="分类"
-            />
-            <Input
-              value={itemForm.unit}
-              onChange={(event) => setItemForm((current) => ({ ...current, unit: event.target.value }))}
-              placeholder="单位"
-            />
-            <Input
-              value={itemForm.quantity}
-              onChange={(event) => setItemForm((current) => ({ ...current, quantity: event.target.value }))}
-              placeholder="数量"
-              type="number"
-              min="0"
-            />
-            <Input
-              value={itemForm.unitPrice}
-              onChange={(event) => setItemForm((current) => ({ ...current, unitPrice: event.target.value }))}
-              placeholder="单价"
-              type="number"
-              min="0"
-              step="0.01"
-            />
-            <Input
-              value={itemForm.remark}
-              onChange={(event) => setItemForm((current) => ({ ...current, remark: event.target.value }))}
-              placeholder="备注"
-              className="md:col-span-5"
-            />
-            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleCreateItem} disabled={savingItem}>
-              {savingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              新增物品
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => void loadData()} disabled={loading}>
+                <RefreshCcw className={cn('h-4 w-4', loading && 'animate-spin')} />
+                刷新
+              </Button>
+              <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={openItemDialog}>
+                <Plus className="h-4 w-4" />
+                新增物品
+              </Button>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-slate-100">
@@ -391,40 +524,11 @@ export default function ItemManagementPanel() {
             <ClipboardList className="h-4 w-4 text-emerald-600" />
             物品领用
           </h2>
-          <p className="mt-1 text-sm text-slate-500">后台也可以提交领用申请，审核后才扣减库存。</p>
-
-          <div className="mt-4 space-y-3">
-            <Select value={claimForm.itemId} onValueChange={(value) => setClaimForm((current) => ({ ...current, itemId: value }))}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择领用物品" />
-              </SelectTrigger>
-              <SelectContent>
-                {items.map((item) => (
-                  <SelectItem key={item.id} value={String(item.id)}>
-                    {item.name}（剩余 {item.remainingQuantity}{item.unit}）
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input
-              value={claimForm.quantity}
-              onChange={(event) => setClaimForm((current) => ({ ...current, quantity: event.target.value }))}
-              type="number"
-              min="1"
-              max={selectedItem?.remainingQuantity || undefined}
-              placeholder="领用数量"
-            />
-            <Textarea
-              value={claimForm.reason}
-              onChange={(event) => setClaimForm((current) => ({ ...current, reason: event.target.value }))}
-              placeholder="领用原因"
-              rows={4}
-            />
-            <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitClaim} disabled={submittingClaim || items.length === 0}>
-              {submittingClaim ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              物品领用申请
-            </Button>
-          </div>
+          <p className="mt-1 text-sm text-slate-500">点击按钮填写领用申请，审核后才扣减库存。</p>
+          <Button className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700" onClick={openClaimDialog} disabled={items.length === 0}>
+            <Plus className="h-4 w-4" />
+            物品领用申请
+          </Button>
 
           <div className="mt-5 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-lg bg-orange-50 p-3 text-orange-700">
@@ -459,7 +563,7 @@ export default function ItemManagementPanel() {
                 <TableHead>原因</TableHead>
                 <TableHead>状态</TableHead>
                 <TableHead>审核人</TableHead>
-                <TableHead>操作</TableHead>
+                <TableHead className="min-w-72">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -488,30 +592,48 @@ export default function ItemManagementPanel() {
                   </TableCell>
                   <TableCell>{display(claim.reviewerName)}</TableCell>
                   <TableCell>
-                    {claim.status === '待审核' ? (
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          className="bg-emerald-600 hover:bg-emerald-700"
-                          onClick={() => void handleReview(claim, 'approve')}
-                          disabled={reviewingId === claim.id}
-                        >
-                          {reviewingId === claim.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                          通过
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => void handleReview(claim, 'reject')}
-                          disabled={reviewingId === claim.id}
-                        >
-                          <XCircle className="h-4 w-4" />
-                          驳回
-                        </Button>
-                      </div>
-                    ) : (
-                      <span className="text-sm text-slate-500">已处理</span>
-                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" onClick={() => openViewClaim(claim)}>
+                        <Eye className="h-4 w-4" />
+                        查看
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => openEditClaim(claim)}>
+                        <Pencil className="h-4 w-4" />
+                        修改
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 hover:text-red-700"
+                        onClick={() => void handleDeleteClaim(claim)}
+                        disabled={deletingId === claim.id}
+                      >
+                        {deletingId === claim.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        删除
+                      </Button>
+                      {isPending(claim.status) && (
+                        <>
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            onClick={() => void handleReview(claim, 'approve')}
+                            disabled={reviewingId === claim.id}
+                          >
+                            {reviewingId === claim.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                            通过
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => void handleReview(claim, 'reject')}
+                            disabled={reviewingId === claim.id}
+                          >
+                            <XCircle className="h-4 w-4" />
+                            驳回
+                          </Button>
+                        </>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -519,6 +641,146 @@ export default function ItemManagementPanel() {
           </Table>
         </div>
       </section>
+
+      <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>新增物品</DialogTitle>
+            <DialogDescription>填写物品名称、数量和单价，保存后进入物品库。</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              value={itemForm.name}
+              onChange={(event) => setItemForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="物品名称"
+              className="sm:col-span-2"
+            />
+            <Input
+              value={itemForm.category}
+              onChange={(event) => setItemForm((current) => ({ ...current, category: event.target.value }))}
+              placeholder="分类"
+            />
+            <Input
+              value={itemForm.unit}
+              onChange={(event) => setItemForm((current) => ({ ...current, unit: event.target.value }))}
+              placeholder="单位"
+            />
+            <Input
+              value={itemForm.quantity}
+              onChange={(event) => setItemForm((current) => ({ ...current, quantity: event.target.value }))}
+              placeholder="数量"
+              type="number"
+              min="0"
+            />
+            <Input
+              value={itemForm.unitPrice}
+              onChange={(event) => setItemForm((current) => ({ ...current, unitPrice: event.target.value }))}
+              placeholder="单价"
+              type="number"
+              min="0"
+              step="0.01"
+            />
+            <Input
+              value={itemForm.remark}
+              onChange={(event) => setItemForm((current) => ({ ...current, remark: event.target.value }))}
+              placeholder="备注"
+              className="sm:col-span-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setItemDialogOpen(false)}>取消</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleCreateItem} disabled={savingItem}>
+              {savingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              保存物品
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={claimDialogOpen} onOpenChange={setClaimDialogOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>物品领用申请</DialogTitle>
+            <DialogDescription>选择物品并填写领用数量和原因，提交后等待审核。</DialogDescription>
+          </DialogHeader>
+          <ClaimFormFields
+            items={items}
+            itemId={claimForm.itemId}
+            quantity={claimForm.quantity}
+            reason={claimForm.reason}
+            onItemChange={(value) => setClaimForm((current) => ({ ...current, itemId: value }))}
+            onQuantityChange={(value) => setClaimForm((current) => ({ ...current, quantity: value }))}
+            onReasonChange={(value) => setClaimForm((current) => ({ ...current, reason: value }))}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClaimDialogOpen(false)}>取消</Button>
+            <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitClaim} disabled={submittingClaim || items.length === 0}>
+              {submittingClaim ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              提交申请
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={viewClaimOpen} onOpenChange={setViewClaimOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>查看领用申请</DialogTitle>
+            <DialogDescription>查看申请人、物品、数量和审核状态。</DialogDescription>
+          </DialogHeader>
+          {selectedClaim && (
+            <div className="grid gap-3 text-sm sm:grid-cols-2">
+              {[
+                ['申请人', selectedClaim.applicantName],
+                ['部门', selectedClaim.department],
+                ['物品', selectedClaim.itemName],
+                ['数量', selectedClaim.quantity],
+                ['状态', selectedClaim.status],
+                ['审核人', selectedClaim.reviewerName],
+                ['审核时间', selectedClaim.reviewedAt],
+                ['提交时间', selectedClaim.createdAt],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
+                  <div className="text-xs text-slate-500">{label}</div>
+                  <div className="mt-1 font-medium text-slate-900">{display(value)}</div>
+                </div>
+              ))}
+              <div className="rounded-lg bg-slate-50 px-3 py-2 sm:col-span-2">
+                <div className="text-xs text-slate-500">领用原因</div>
+                <div className="mt-1 whitespace-pre-wrap font-medium text-slate-900">{display(selectedClaim.reason)}</div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setViewClaimOpen(false)}>关闭</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editClaimOpen} onOpenChange={setEditClaimOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>修改领用申请</DialogTitle>
+            <DialogDescription>仅待审核的申请可以修改；已审核申请不能修改库存相关信息。</DialogDescription>
+          </DialogHeader>
+          <ClaimFormFields
+            items={items}
+            itemId={editClaimForm.itemId}
+            quantity={editClaimForm.quantity}
+            reason={editClaimForm.reason}
+            onItemChange={(value) => setEditClaimForm((current) => ({ ...current, itemId: value }))}
+            onQuantityChange={(value) => setEditClaimForm((current) => ({ ...current, quantity: value }))}
+            onReasonChange={(value) => setEditClaimForm((current) => ({ ...current, reason: value }))}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditClaimOpen(false)}>取消</Button>
+            <Button className="bg-blue-600 hover:bg-blue-700" onClick={handleUpdateClaim} disabled={updatingClaim}>
+              {updatingClaim ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}
+              保存修改
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
